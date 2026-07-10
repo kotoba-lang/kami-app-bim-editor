@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kami BIM Editor</title><style>body { margin: 0; font-family: system-ui; background: #0c1221; color: #e7ecfa; }
+.w3 { left: 16%; top: 80%; width: 65%; height: 14px; }
+dt { color: #9eb0d8; }
+.w1 { left: 16%; top: 22%; width: 65%; height: 14px; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: #a7b9e0; }
+.plan { position: relative; margin: 22px; border: 1px solid #49618d; background: repeating-linear-gradient(0deg,transparent,transparent 31px,#25385f 32px),repeating-linear-gradient(90deg,transparent,transparent 31px,#25385f 32px); }
+.wall { position: absolute; background: #87a5e5; }
+main { display: grid; grid-template-columns: 230px 1fr 260px; min-height: calc(100vh - 52px); }
+dd { margin: 2px 0 12px; }
+.w2 { left: 16%; top: 22%; width: 14px; height: 58%; }
+.w4 { left: 81%; top: 22%; width: 14px; height: 58%; }
+aside { padding: 18px; background: #111a34; border-right: 1px solid #2d3e68; }
+header { padding: 16px; display: flex; justify-content: space-between; background: #121c38; }
+dl { font-size: 13px; }
+button { color: #e7ecfa; text-align: left; width: 100%; background: #20315b; padding: 10px; display: block; border: 1px solid #526fa9; border-radius: 6px; margin: 8px 0; }</style></head>
+  <body>
+    <header>
+      <strong>KAMI BIM EDITOR</strong>
+      <span>Lodge · Ground Floor</span>
+    </header>
+    <main>
+      <aside>
+        <h2>Elements</h2>
+        <button>＋ Wall</button>
+        <button>＋ Slab</button>
+        <button>＋ Door</button>
+        <button>＋ Window</button>
+        <h2>Levels</h2>
+        <button>Ground Floor · 0.00 m</button>
+        <button>Level 01 · 3.20 m</button>
+      </aside>
+      <section class="plan">
+        <div class="wall w1"></div>
+        <div class="wall w2"></div>
+        <div class="wall w3"></div>
+        <div class="wall w4"></div>
+      </section>
+      <aside>
+        <h2>Selected wall</h2>
+        <dl>
+          <dt>Type</dt>
+          <dd>Exterior Wall</dd>
+          <dt>Length</dt>
+          <dd>8.40 m</dd>
+          <dt>Height</dt>
+          <dd>3.20 m</dd>
+          <dt>Material</dt>
+          <dd>Reinforced concrete</dd>
+        </dl>
+        <button>Edit properties</button>
+      </aside>
+    </main>
+  </body>
+</html>
