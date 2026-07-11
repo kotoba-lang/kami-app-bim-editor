@@ -44,6 +44,15 @@ button { cursor: pointer; text-align: left; } :focus-visible { outline: 3px soli
         <button id="add-slab">＋ Floor slab</button>
         <button id="add-door">＋ Door in selected wall</button>
         <button id="add-window">＋ Window in selected wall</button>
+        <h2>Rooms</h2>
+        <label>Width (m)<input id="room-width" type="number" min="0.1" step="0.1" value="4"></label>
+        <label>Depth (m)<input id="room-depth" type="number" min="0.1" step="0.1" value="3"></label>
+        <button id="add-room">＋ Room</button>
+        <div id="rooms"></div>
+        <label>Room name<input id="room-name" value="Room"></label>
+        <label>Use<select id="room-category"><option value="residential">Residential</option><option value="office">Office</option><option value="circulation">Circulation</option><option value="service">Service</option><option value="mechanical-room">Mechanical room</option><option value="other">Other</option></select></label>
+        <button id="apply-room">Apply room properties</button>
+        <button id="delete-room">Delete room</button>
         <h2>Levels</h2>
         <button id="add-level">＋ Add level</button>
         <div id="levels"></div>

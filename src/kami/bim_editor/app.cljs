@@ -2,6 +2,7 @@
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
+                      :selected-space nil :next-space-id 1000
                       :history [] :future [] :azimuth 0.75 :elevation 0.5
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
                       :revision 0 :save-status :clean}))
@@ -10,17 +11,25 @@
 (defn- storeys [] (:storeys (bim/find-building (:project @state) 2)))
 (defn- elements [] (:elements (bim/find-storey (:project @state) (:active-storey @state))))
 (defn- all-elements [] (mapcat :elements (storeys)))
+(defn- spaces [] (:spaces (bim/find-storey (:project @state) (:active-storey @state))))
+(defn- all-spaces [] (mapcat :spaces (storeys)))
 (defn- selected [] (first (filter #(= (:selected @state) (:id %)) (elements))))
 (defn- mesh [] (bim/merge-meshes (keep bim/element-mesh (all-elements))))
 (defn- element-rows []
   (mapcat (fn [storey]
-            (map (fn [element]
-                   (let [q (:quantities element)]
-                     {:id (:id element) :storey (:name storey) :kind (name (:kind element)) :name (:name element)
-                      :classification (get-in element [:classification :code] "")
-                      :length (:length-m q) :gross-area (:gross-area-m2 q) :net-area (:net-area-m2 q)
-                      :gross-volume (:gross-volume-m3 q) :net-volume (:net-volume-m3 q)}))
-                 (:elements storey))) (storeys)))
+            (concat
+             (map (fn [element]
+                    (let [q (:quantities element)]
+                      {:id (:id element) :storey (:name storey) :kind (name (:kind element)) :name (:name element)
+                       :classification (get-in element [:classification :code] "")
+                       :length (:length-m q) :gross-area (:gross-area-m2 q) :net-area (:net-area-m2 q)
+                       :gross-volume (:gross-volume-m3 q) :net-volume (:net-volume-m3 q)})) (:elements storey))
+             (map (fn [space]
+                    (let [q (:quantities space)]
+                      {:id (:id space) :storey (:name storey) :kind "space" :name (:name space)
+                       :classification (name (:category space)) :length nil :gross-area (:gross-area-m2 q)
+                       :net-area (:net-area-m2 q) :gross-volume (:gross-volume-m3 q) :net-volume (:net-volume-m3 q)}))
+                  (:spaces storey)))) (storeys)))
 (defn- format-quantity [value] (if (number? value) (.toFixed value 3) "—"))
 (defn- refresh-schedule! []
   (let [container (.getElementById js/document "quantity-schedule") rows (element-rows)]
@@ -53,6 +62,7 @@
       (set! (.-textContent (.getElementById js/document "debug-state"))
             (js/JSON.stringify (clj->js {:storeyCount (count (storeys)) :activeStorey (:active-storey @state)
                                          :elementCount (count (all-elements))
+                                         :spaceCount (count (all-spaces))
                                          :wallCount (count (filter #(= :wall (:kind %)) (all-elements)))
                                          :slabCount (count (filter #(= :slab (:kind %)) (all-elements)))
                                          :openingCount (reduce + (map #(count (:openings %)) (filter #(= :wall (:kind %)) (all-elements))))
@@ -77,6 +87,17 @@
         (when (= (:id e) (:selected @state)) (.add (.-classList b) "selected"))
         (.addEventListener b "click" #(do (swap! state assoc :selected (:id e)) (refresh!)))
         (.appendChild tree b))))
+  (let [rooms (.getElementById js/document "rooms")]
+    (set! (.-innerHTML rooms) "")
+    (doseq [space (spaces)]
+      (let [b (.createElement js/document "button")]
+        (set! (.-textContent b) (str "▣ " (:name space) " · " (format-quantity (get-in space [:quantities :net-area-m2])) " m²"))
+        (when (= (:id space) (:selected-space @state)) (.add (.-classList b) "selected"))
+        (.addEventListener b "click" #(do (swap! state assoc :selected-space (:id space))
+                                           (set! (.-value (.getElementById js/document "room-name")) (:name space))
+                                           (set! (.-value (.getElementById js/document "room-category")) (name (:category space)))
+                                           (refresh!)))
+        (.appendChild rooms b))))
   (refresh-schedule!)
   (when-let [e (selected)]
     (let [wall? (= :wall (:kind e))]
@@ -113,11 +134,13 @@
   (let [p (project/open value) model (:project/building-model p) editor (:project/editor p)
         camera (:project/camera p) interaction (:project/interaction p)
         element-ids (map :id (mapcat :elements (mapcat :storeys (mapcat :buildings (:sites model)))))
+        space-ids (map :id (mapcat :spaces (mapcat :storeys (mapcat :buildings (:sites model)))))
         storey-ids (map :id (mapcat :storeys (mapcat :buildings (:sites model))))]
     (swap! state assoc :project-id (:project/id p) :project-name (:project/name p) :project model
            :active-storey (:active-storey editor) :selected (:selected editor) :azimuth (:azimuth camera)
            :elevation (:elevation camera) :profile (:profile interaction) :next-id (inc (reduce max 13 element-ids))
-           :next-storey-id (inc (reduce max 3 storey-ids)) :history [] :future [] :shortcut-buffer "" :save-status :saved)
+           :next-storey-id (inc (reduce max 3 storey-ids)) :next-space-id (inc (reduce max 999 space-ids))
+           :selected-space nil :history [] :future [] :shortcut-buffer "" :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile interaction))) (refresh!)))
 (defn- load-project! []
   (when-let [data (.getItem js/localStorage storage-key)]
@@ -170,6 +193,24 @@
                                            :boundary [[0 0 z] [8 0 z] [8 6 z] [0 6 z]] :thickness 0.25})]
                        (swap! state assoc :next-id (inc id) :selected id)
                        (commit! (bim/add-element (:project @state) (:active-storey @state) slab))))
+ (.addEventListener (.getElementById js/document "add-room") "click"
+                    #(let [id (:next-space-id @state) storey (bim/find-storey (:project @state) (:active-storey @state))
+                           z (:elevation storey) width (max 0.1 (num "room-width")) depth (max 0.1 (num "room-depth"))
+                           room (bim/room-space {:id id :name (str "Room " id) :label (str id) :category :residential
+                                                 :boundary [[0 0 z] [width 0 z] [width depth z] [0 depth z]] :height (:height storey)})]
+                       (swap! state assoc :next-space-id (inc id) :selected-space id)
+                       (commit! (bim/add-space (:project @state) (:active-storey @state) room))))
+ (.addEventListener (.getElementById js/document "apply-room") "click"
+                    #(when-let [id (:selected-space @state)]
+                       (let [old (first (filter (fn [s] (= id (:id s))) (spaces)))
+                             room (bim/room-space {:id id :name (.-value (.getElementById js/document "room-name"))
+                                                   :label (:label old) :category (keyword (.-value (.getElementById js/document "room-category")))
+                                                   :boundary (:boundary old) :height (:height old)})]
+                         (commit! (bim/update-space (:project @state) (:active-storey @state) id (constantly room))))))
+ (.addEventListener (.getElementById js/document "delete-room") "click"
+                    #(when-let [id (:selected-space @state)]
+                       (swap! state assoc :selected-space nil)
+                       (commit! (bim/delete-space (:project @state) (:active-storey @state) id))))
  (doseq [[button-id kind] [["add-door" :door] ["add-window" :window]]]
    (.addEventListener (.getElementById js/document button-id) "click"
                       #(when-let [host (selected)]
