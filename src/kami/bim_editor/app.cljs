@@ -1,4 +1,4 @@
-(ns kami.bim-editor.app (:require [cljs.reader :as reader] [bim] [kami.bim-editor.project :as project] [kami.webgpu.mesh :as gpu]))
+(ns kami.bim-editor.app (:require [cljs.reader :as reader] [clojure.string :as string] [bim] [kami.bim-editor.project :as project] [kami.webgpu.mesh :as gpu]))
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
@@ -6,11 +6,45 @@
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
                       :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
+(declare refresh!)
 (defn- storeys [] (:storeys (bim/find-building (:project @state) 2)))
 (defn- elements [] (:elements (bim/find-storey (:project @state) (:active-storey @state))))
 (defn- all-elements [] (mapcat :elements (storeys)))
 (defn- selected [] (first (filter #(= (:selected @state) (:id %)) (elements))))
 (defn- mesh [] (bim/merge-meshes (keep bim/element-mesh (all-elements))))
+(defn- element-rows []
+  (mapcat (fn [storey]
+            (map (fn [element]
+                   (let [q (:quantities element)]
+                     {:id (:id element) :storey (:name storey) :kind (name (:kind element)) :name (:name element)
+                      :classification (get-in element [:classification :code] "")
+                      :length (:length-m q) :gross-area (:gross-area-m2 q) :net-area (:net-area-m2 q)
+                      :gross-volume (:gross-volume-m3 q) :net-volume (:net-volume-m3 q)}))
+                 (:elements storey))) (storeys)))
+(defn- format-quantity [value] (if (number? value) (.toFixed value 3) "—"))
+(defn- refresh-schedule! []
+  (let [container (.getElementById js/document "quantity-schedule") rows (element-rows)]
+    (set! (.-innerHTML container) "")
+    (doseq [row rows]
+      (let [line (.createElement js/document "button")]
+        (set! (.-textContent line) (str (:storey row) " · " (:kind row) " · " (:name row)
+                                            " · L " (format-quantity (:length row))
+                                            " · A " (format-quantity (:net-area row))
+                                            " · V " (format-quantity (:net-volume row))))
+        (.addEventListener line "click" #(do (swap! state assoc :active-storey
+                                                     (:id (first (filter (fn [s] (= (:name s) (:storey row))) (storeys))))
+                                                :selected (:id row)) (refresh!)))
+        (.appendChild container line)))))
+(defn- csv-cell [value] (str "\"" (.replaceAll (str (or value "")) "\"" "\"\"") "\""))
+(defn- schedule-csv []
+  (let [columns [[:id "ID"] [:storey "Storey"] [:kind "Kind"] [:name "Name"] [:classification "Classification"]
+                 [:length "Length m"] [:gross-area "Gross area m2"] [:net-area "Net area m2"]
+                 [:gross-volume "Gross volume m3"] [:net-volume "Net volume m3"]]]
+    (str (string/join "," (map (comp csv-cell second) columns)) "\n"
+         (string/join "\n" (map (fn [row] (string/join "," (map #(csv-cell (get row (first %))) columns))) (element-rows))))))
+(defn- download-schedule! []
+  (let [a (.createElement js/document "a") url (.createObjectURL js/URL (js/Blob. #js [(schedule-csv)] #js {:type "text/csv;charset=utf-8"}))]
+    (set! (.-href a) url) (set! (.-download a) "bim-quantity-schedule.csv") (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
 (defn- refresh! []
   (when-let [v @viewport]
     (let [m (mesh)]
@@ -22,6 +56,8 @@
                                          :wallCount (count (filter #(= :wall (:kind %)) (all-elements)))
                                          :slabCount (count (filter #(= :slab (:kind %)) (all-elements)))
                                          :openingCount (reduce + (map #(count (:openings %)) (filter #(= :wall (:kind %)) (all-elements))))
+                                         :scheduleRows (count (element-rows))
+                                         :grossVolume (reduce + 0 (keep #(get-in % [:quantities :gross-volume-m3]) (all-elements)))
                                          :selected (:selected @state) :profile (name (:profile @state))
                                          :projectVersion project/current-version :revision (:revision @state) :saveStatus (name (:save-status @state))
                                          :shortcutBuffer (:shortcut-buffer @state)})))))
@@ -41,6 +77,7 @@
         (when (= (:id e) (:selected @state)) (.add (.-classList b) "selected"))
         (.addEventListener b "click" #(do (swap! state assoc :selected (:id e)) (refresh!)))
         (.appendChild tree b))))
+  (refresh-schedule!)
   (when-let [e (selected)]
     (let [wall? (= :wall (:kind e))]
       (set! (.-textContent (.getElementById js/document "inspector-title")) (str "Selected " (name (:kind e))))
@@ -170,4 +207,5 @@
  (.addEventListener (.getElementById js/document "load-project") "click" load-project!)
  (.addEventListener (.getElementById js/document "import") "click" #(.click (.getElementById js/document "import-file")))
  (.addEventListener (.getElementById js/document "import-file") "change" import-project!)
+ (.addEventListener (.getElementById js/document "export-schedule") "click" download-schedule!)
  (.addEventListener (.getElementById js/document "export") "click" download-project!)))
