@@ -1,56 +1,61 @@
 <!DOCTYPE html>
-<html>
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kami BIM Editor</title><style>body { margin: 0; font-family: system-ui; background: #0c1221; color: #e7ecfa; }
-.w3 { left: 16%; top: 80%; width: 65%; height: 14px; }
-dt { color: #9eb0d8; }
-.w1 { left: 16%; top: 22%; width: 65%; height: 14px; }
-h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: #a7b9e0; }
-.plan { position: relative; margin: 22px; border: 1px solid #49618d; background: repeating-linear-gradient(0deg,transparent,transparent 31px,#25385f 32px),repeating-linear-gradient(90deg,transparent,transparent 31px,#25385f 32px); }
-.wall { position: absolute; background: #87a5e5; }
-main { display: grid; grid-template-columns: 230px 1fr 260px; min-height: calc(100vh - 52px); }
-dd { margin: 2px 0 12px; }
-.w2 { left: 16%; top: 22%; width: 14px; height: 58%; }
-.w4 { left: 81%; top: 22%; width: 14px; height: 58%; }
-aside { padding: 18px; background: #111a34; border-right: 1px solid #2d3e68; }
-header { padding: 16px; display: flex; justify-content: space-between; background: #121c38; }
-dl { font-size: 13px; }
-button { color: #e7ecfa; text-align: left; width: 100%; background: #20315b; padding: 10px; display: block; border: 1px solid #526fa9; border-radius: 6px; margin: 8px 0; }</style></head>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Kami BIM Editor</title><style>aside:last-child { border-left: 1px solid #2d3e68; border-right: 0; }
+.stats { position: absolute; right: 14px; bottom: 14px; padding: 8px; background: #08101dcc; }
+* { box-sizing: border-box; }
+.primary { background: #7da2f3; color: #071226; font-weight: 700; }
+.viewport { position: relative; }
+body { margin: 0; height: 100vh; display: grid; grid-template-rows: 52px 1fr; font-family: Inter,system-ui; background: #09101c; color: #e7ecfa; }
+.selected { border-color: #9fb9ff; background: #314a82; }
+label { display: grid; gap: 4px; margin: 9px 0; }
+button,input { width: 100%; margin: 5px 0; padding: 8px; background: #20315b; border: 1px solid #526fa9; border-radius: 5px; color: #e7ecfa; }
+h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: #a7b9e0; }
+main { display: grid; grid-template-columns: 240px 1fr 280px; min-height: 0; }
+header .spacer { flex: 1; }
+#gpu-canvas { width: 100%; height: 100%; display: block; }
+#gpu-status { position: absolute; left: 50%; top: 45%; transform: translate(-50%,-50%); color: #ffb0b0; }
+aside { padding: 16px; background: #111a34; border-right: 1px solid #2d3e68; }
+header { padding: 0 16px; display: flex; align-items: center; gap: 18px; background: #121c38; }
+button { cursor: pointer; text-align: left; }</style></head>
   <body>
     <header>
       <strong>KAMI BIM EDITOR</strong>
-      <span>Lodge · Ground Floor</span>
+      <a href="https://kotoba-lang.github.io/kami-studio/">Studio</a>
+      <span>Semantic building workspace</span>
+      <span class="spacer"></span>
+      <button id="undo">Undo</button>
+      <button id="redo">Redo</button>
+      <button id="export">Export BIM EDN</button>
     </header>
     <main>
       <aside>
         <h2>Elements</h2>
-        <button>＋ Wall</button>
+        <button class="primary" id="add-wall">＋ Wall</button>
         <button>＋ Slab</button>
         <button>＋ Door</button>
         <button>＋ Window</button>
         <h2>Levels</h2>
-        <button>Ground Floor · 0.00 m</button>
+        <button class="selected">Ground Floor · 0.00 m</button>
         <button>Level 01 · 3.20 m</button>
+        <h2>Model tree</h2>
+        <div id="tree"></div>
       </aside>
-      <section class="plan">
-        <div class="wall w1"></div>
-        <div class="wall w2"></div>
-        <div class="wall w3"></div>
-        <div class="wall w4"></div>
+      <section class="viewport">
+        <canvas id="gpu-canvas" aria-label="BIM WebGPU viewport"></canvas>
+        <div id="gpu-status">Initializing WebGPU…</div>
+        <div class="stats" id="stats">4 semantic walls</div>
       </section>
       <aside>
         <h2>Selected wall</h2>
-        <dl>
-          <dt>Type</dt>
-          <dd>Exterior Wall</dd>
-          <dt>Length</dt>
-          <dd>8.40 m</dd>
-          <dt>Height</dt>
-          <dd>3.20 m</dd>
-          <dt>Material</dt>
-          <dd>Reinforced concrete</dd>
-        </dl>
-        <button>Edit properties</button>
+        <label>Name<input id="name" value="Exterior Wall"></label>
+        <label>Length (m)<input id="length" type="number" step="0.1" value="8.4"></label>
+        <label>Height (m)<input id="height" type="number" step="0.1" value="3.2"></label>
+        <label>Thickness (m)<input id="thickness" type="number" step="0.05" value="0.25"></label>
+        <label>Material<input id="material" value="Reinforced concrete"></label>
+        <button class="primary" id="apply">Apply properties</button>
+        <button id="delete">Delete element</button>
       </aside>
     </main>
+    <script src="./js/app.js"></script>
   </body>
 </html>
