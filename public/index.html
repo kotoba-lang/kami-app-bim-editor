@@ -23,6 +23,11 @@ button { cursor: pointer; text-align: left; }</style></head>
       <a href="https://kotoba-lang.github.io/kami-studio/">Studio</a>
       <span>Semantic building workspace</span>
       <span class="spacer"></span>
+      <select id="profile" aria-label="Interaction profile">
+        <option value="revit">Revit</option>
+        <option value="archicad">Archicad</option>
+        <option value="vectorworks">Vectorworks</option>
+      </select>
       <button id="undo">Undo</button>
       <button id="redo">Redo</button>
       <button id="export">Export BIM EDN</button>
@@ -30,6 +35,7 @@ button { cursor: pointer; text-align: left; }</style></head>
     <main>
       <aside>
         <h2>Elements</h2>
+        <p id="profile-hint">WA Wall · DR Door · WN Window · LL Level · FL Floor</p>
         <button class="primary" id="add-wall">＋ Wall</button>
         <button id="add-slab">＋ Floor slab</button>
         <button id="add-door">＋ Door in selected wall</button>

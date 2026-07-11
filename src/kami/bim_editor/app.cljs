@@ -2,7 +2,8 @@
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
-                      :history [] :future [] :azimuth 0.75 :elevation 0.5}))
+                      :history [] :future [] :azimuth 0.75 :elevation 0.5
+                      :profile :revit :shortcut-buffer ""}))
 (defonce viewport (atom nil))
 (defn- storeys [] (:storeys (bim/find-building (:project @state) 2)))
 (defn- elements [] (:elements (bim/find-storey (:project @state) (:active-storey @state))))
@@ -20,7 +21,8 @@
                                          :wallCount (count (filter #(= :wall (:kind %)) (all-elements)))
                                          :slabCount (count (filter #(= :slab (:kind %)) (all-elements)))
                                          :openingCount (reduce + (map #(count (:openings %)) (filter #(= :wall (:kind %)) (all-elements))))
-                                         :selected (:selected @state)})))))
+                                         :selected (:selected @state) :profile (name (:profile @state))
+                                         :shortcutBuffer (:shortcut-buffer @state)})))))
   (let [levels (.getElementById js/document "levels")]
     (set! (.-innerHTML levels) "")
     (doseq [storey (storeys)]
@@ -50,8 +52,38 @@
 (defn- commit! [p] (swap! state (fn [s] (-> s (update :history conj (:project s)) (assoc :project p :future [])))) (refresh!))
 (defn- draw! [] (when-let [{:keys [buffers] :as v} @viewport] (when buffers (let [{:keys [azimuth elevation]} @state d 14 eye [(+ 4 (* d (js/Math.cos elevation) (js/Math.cos azimuth))) (+ 3 (* d (js/Math.sin elevation))) (+ 3 (* d (js/Math.cos elevation) (js/Math.sin azimuth)))]] (gpu/render-frame! v buffers eye [4 1.5 3] [0.55 0.7 0.95])))) (js/requestAnimationFrame draw!))
 (defn- num [id] (js/parseFloat (.-value (.getElementById js/document id))))
+(defn- editable-target? [event]
+  (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
+    (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
+(def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level" "fl" "add-slab"})
+(def profile-shortcuts
+  {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level" "f" "add-slab"}
+   :vectorworks {"2" "add-wall" "d" "add-door" "w" "add-window" "l" "add-level" "f" "add-slab"}})
+(defn- invoke-shortcut! [event]
+  (when-not (editable-target? event)
+    (let [key (.toLowerCase (.-key event)) ctrl (or (.-ctrlKey event) (.-metaKey event)) profile (:profile @state)]
+      (cond
+        (and ctrl (= key "z") (.-shiftKey event)) (do (.preventDefault event) (.click (.getElementById js/document "redo")))
+        (and ctrl (= key "z")) (do (.preventDefault event) (.click (.getElementById js/document "undo")))
+        (= profile :revit)
+        (when (re-matches #"[a-z]" key)
+          (let [buffer (str (:shortcut-buffer @state) key) command (get revit-shortcuts buffer)
+                prefix? (some #(.startsWith % buffer) (keys revit-shortcuts))]
+            (.preventDefault event)
+            (cond command (do (swap! state assoc :shortcut-buffer "") (.click (.getElementById js/document command)))
+                  prefix? (swap! state assoc :shortcut-buffer buffer)
+                  :else (swap! state assoc :shortcut-buffer key))))
+        :else (when-let [command (get-in profile-shortcuts [profile key])]
+                (.preventDefault event) (.click (.getElementById js/document command)))))))
 (defn ^:export init! [] (let [canvas (.getElementById js/document "gpu-canvas") drag (atom nil)]
  (-> (gpu/init-canvas! canvas) (.then (fn [v] (reset! viewport v) (refresh!) (set! (.-textContent (.getElementById js/document "gpu-status")) "") (draw!))))
+ (.addEventListener (.getElementById js/document "profile") "change"
+                    #(do (swap! state assoc :profile (keyword (.. % -target -value)) :shortcut-buffer "")
+                         (set! (.-textContent (.getElementById js/document "profile-hint"))
+                               (case (:profile @state) :archicad "W Wall · D Door · N Window · L Level · F Floor"
+                                     :vectorworks "2 Wall · D Door · W Window · L Layer · F Floor"
+                                     "WA Wall · DR Door · WN Window · LL Level · FL Floor")) (refresh!)))
+ (.addEventListener js/window "keydown" invoke-shortcut!)
  (.addEventListener (.getElementById js/document "add-wall") "click" #(let [id (:next-id @state) storey-id (:active-storey @state)
                                                                                   z (:elevation (bim/find-storey (:project @state) storey-id))
                                                                                   y (+ 7 (- id 14)) w (wall id [0 y z] [4 y z])]
