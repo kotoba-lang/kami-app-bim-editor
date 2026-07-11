@@ -3,6 +3,7 @@
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
                       :selected-space nil :next-space-id 1000
+                      :selected-clash nil
                       :history [] :future [] :azimuth 0.75 :elevation 0.5
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
                       :revision 0 :save-status :clean}))
@@ -54,6 +55,26 @@
 (defn- download-schedule! []
   (let [a (.createElement js/document "a") url (.createObjectURL js/URL (js/Blob. #js [(schedule-csv)] #js {:type "text/csv;charset=utf-8"}))]
     (set! (.-href a) url) (set! (.-download a) "bim-quantity-schedule.csv") (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
+(defn- clashes [] (bim/detect-clashes (:project @state) {:tolerance 0.001}))
+(defn- refresh-clashes! []
+  (let [container (.getElementById js/document "clash-results") results (clashes)]
+    (set! (.-innerHTML container) "")
+    (if (empty? results)
+      (set! (.-textContent container) "No clashes")
+      (doseq [[index result] (map-indexed vector results)]
+        (let [button (.createElement js/document "button")]
+          (set! (.-textContent button) (str "⚠ " (:clash/a result) " × " (:clash/b result)
+                                             " · " (.toFixed (:clash/volume result) 4) " m³"))
+          (when (= index (:selected-clash @state)) (.add (.-classList button) "selected"))
+          (.addEventListener button "click" #(do (swap! state assoc :selected-clash index :active-storey (:clash/storey result)
+                                                        :selected (:clash/a result)) (refresh!)))
+          (.appendChild container button))))))
+(defn- download-clashes! []
+  (let [rows (clashes) data (str "storey,element_a,element_b,kind_a,kind_b,overlap_x,overlap_y,overlap_z,volume_m3\n"
+                                 (string/join "\n" (map (fn [c] (string/join "," (concat [(:clash/storey c) (:clash/a c) (:clash/b c)]
+                                                                                         (map name (:clash/kinds c)) (:clash/overlap c) [(:clash/volume c)]))) rows)))
+        a (.createElement js/document "a") url (.createObjectURL js/URL (js/Blob. #js [data] #js {:type "text/csv;charset=utf-8"}))]
+    (set! (.-href a) url) (set! (.-download a) "bim-clashes.csv") (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
 (defn- refresh! []
   (when-let [v @viewport]
     (let [m (mesh)]
@@ -70,6 +91,7 @@
                                          :grossVolume (reduce + 0 (keep #(get-in % [:quantities :gross-volume-m3]) (all-elements)))
                                          :selected (:selected @state) :profile (name (:profile @state))
                                          :projectVersion project/current-version :revision (:revision @state) :saveStatus (name (:save-status @state))
+                                         :clashCount (count (clashes)) :selectedClash (:selected-clash @state)
                                          :shortcutBuffer (:shortcut-buffer @state)})))))
   (let [levels (.getElementById js/document "levels")]
     (set! (.-innerHTML levels) "")
@@ -99,6 +121,7 @@
                                            (refresh!)))
         (.appendChild rooms b))))
   (refresh-schedule!)
+  (refresh-clashes!)
   (when-let [e (selected)]
     (let [wall? (= :wall (:kind e))]
       (set! (.-textContent (.getElementById js/document "inspector-title")) (str "Selected " (name (:kind e))))
@@ -249,4 +272,6 @@
  (.addEventListener (.getElementById js/document "import") "click" #(.click (.getElementById js/document "import-file")))
  (.addEventListener (.getElementById js/document "import-file") "change" import-project!)
  (.addEventListener (.getElementById js/document "export-schedule") "click" download-schedule!)
+ (.addEventListener (.getElementById js/document "run-clashes") "click" refresh!)
+ (.addEventListener (.getElementById js/document "export-clashes") "click" download-clashes!)
  (.addEventListener (.getElementById js/document "export") "click" download-project!)))
