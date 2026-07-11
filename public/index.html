@@ -31,18 +31,19 @@ button { cursor: pointer; text-align: left; }</style></head>
       <aside>
         <h2>Elements</h2>
         <button class="primary" id="add-wall">＋ Wall</button>
+        <button id="add-slab">＋ Floor slab</button>
         <button id="add-door">＋ Door in selected wall</button>
         <button id="add-window">＋ Window in selected wall</button>
         <h2>Levels</h2>
-        <button class="selected">Ground Floor · 0.00 m</button>
-        <button>Level 01 · 3.20 m</button>
+        <button id="add-level">＋ Add level</button>
+        <div id="levels"></div>
         <h2>Model tree</h2>
         <div id="tree"></div>
       </aside>
       <section class="viewport">
         <canvas id="gpu-canvas" aria-label="BIM WebGPU viewport"></canvas>
         <div id="gpu-status">Initializing WebGPU…</div>
-        <div class="stats" id="stats">4 semantic walls</div>
+        <div class="stats" id="stats">1 storey · 4 semantic walls</div>
       </section>
       <aside>
         <h2 id="inspector-title">Selected wall</h2>

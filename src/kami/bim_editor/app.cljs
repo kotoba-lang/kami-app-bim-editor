@@ -1,21 +1,34 @@
 (ns kami.bim-editor.app (:require [bim] [kami.webgpu.mesh :as gpu]))
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
-(defonce state (atom {:project (initial-project) :selected 10 :next-id 14 :history [] :future [] :azimuth 0.75 :elevation 0.5}))
+(defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
+                      :history [] :future [] :azimuth 0.75 :elevation 0.5}))
 (defonce viewport (atom nil))
-(defn- elements [] (:elements (bim/find-storey (:project @state) 3)))
+(defn- storeys [] (:storeys (bim/find-building (:project @state) 2)))
+(defn- elements [] (:elements (bim/find-storey (:project @state) (:active-storey @state))))
+(defn- all-elements [] (mapcat :elements (storeys)))
 (defn- selected [] (first (filter #(= (:selected @state) (:id %)) (elements))))
-(defn- mesh [] (bim/merge-meshes (map bim/wall-with-openings-mesh (filter #(= :wall (:kind %)) (elements)))))
+(defn- mesh [] (bim/merge-meshes (keep bim/element-mesh (all-elements))))
 (defn- refresh! []
   (when-let [v @viewport]
     (let [m (mesh)]
       (swap! viewport assoc :buffers (gpu/upload-mesh! (:mesh-context v) m))
-      (set! (.-textContent (.getElementById js/document "stats")) (str (count (elements)) " semantic elements · " (/ (count (:indices m)) 3) " triangles"))
+      (set! (.-textContent (.getElementById js/document "stats")) (str (count (storeys)) " storeys · " (count (all-elements)) " elements · " (/ (count (:indices m)) 3) " triangles"))
       (set! (.-textContent (.getElementById js/document "debug-state"))
-            (js/JSON.stringify (clj->js {:elementCount (count (elements))
-                                         :wallCount (count (filter #(= :wall (:kind %)) (elements)))
-                                         :openingCount (reduce + (map #(count (:openings %)) (filter #(= :wall (:kind %)) (elements))))
+            (js/JSON.stringify (clj->js {:storeyCount (count (storeys)) :activeStorey (:active-storey @state)
+                                         :elementCount (count (all-elements))
+                                         :wallCount (count (filter #(= :wall (:kind %)) (all-elements)))
+                                         :slabCount (count (filter #(= :slab (:kind %)) (all-elements)))
+                                         :openingCount (reduce + (map #(count (:openings %)) (filter #(= :wall (:kind %)) (all-elements))))
                                          :selected (:selected @state)})))))
+  (let [levels (.getElementById js/document "levels")]
+    (set! (.-innerHTML levels) "")
+    (doseq [storey (storeys)]
+      (let [b (.createElement js/document "button")]
+        (set! (.-textContent b) (str (:name storey) " · " (.toFixed (:elevation storey) 2) " m"))
+        (when (= (:id storey) (:active-storey @state)) (.add (.-classList b) "selected"))
+        (.addEventListener b "click" #(do (swap! state assoc :active-storey (:id storey) :selected (some-> (first (:elements storey)) :id)) (refresh!)))
+        (.appendChild levels b))))
   (let [tree (.getElementById js/document "tree")]
     (set! (.-innerHTML tree) "")
     (doseq [e (elements)]
@@ -39,7 +52,23 @@
 (defn- num [id] (js/parseFloat (.-value (.getElementById js/document id))))
 (defn ^:export init! [] (let [canvas (.getElementById js/document "gpu-canvas") drag (atom nil)]
  (-> (gpu/init-canvas! canvas) (.then (fn [v] (reset! viewport v) (refresh!) (set! (.-textContent (.getElementById js/document "gpu-status")) "") (draw!))))
- (.addEventListener (.getElementById js/document "add-wall") "click" #(let [id (:next-id @state) y (+ 7 (- id 14)) w (wall id [0 y 0] [4 y 0])] (swap! state update :next-id inc) (swap! state assoc :selected id) (commit! (bim/add-element (:project @state) 3 w))))
+ (.addEventListener (.getElementById js/document "add-wall") "click" #(let [id (:next-id @state) storey-id (:active-storey @state)
+                                                                                  z (:elevation (bim/find-storey (:project @state) storey-id))
+                                                                                  y (+ 7 (- id 14)) w (wall id [0 y z] [4 y z])]
+                                                                              (swap! state update :next-id inc) (swap! state assoc :selected id)
+                                                                              (commit! (bim/add-element (:project @state) storey-id w))))
+ (.addEventListener (.getElementById js/document "add-level") "click"
+                    #(let [id (:next-storey-id @state) elevation (+ 3.2 (reduce max 0 (map :elevation (storeys))))
+                           level (bim/storey {:id id :name (str "Level " (dec id)) :elevation elevation
+                                              :height 3.2 :placement :identity :spaces [] :elements []})]
+                       (swap! state assoc :next-storey-id (inc id) :active-storey id :selected nil)
+                       (commit! (bim/add-storey (:project @state) 2 level))))
+ (.addEventListener (.getElementById js/document "add-slab") "click"
+                    #(let [id (:next-id @state) storey (bim/find-storey (:project @state) (:active-storey @state)) z (:elevation storey)
+                           slab (bim/slab {:id id :name (str "Floor " (:name storey))
+                                           :boundary [[0 0 z] [8 0 z] [8 6 z] [0 6 z]] :thickness 0.25})]
+                       (swap! state assoc :next-id (inc id) :selected id)
+                       (commit! (bim/add-element (:project @state) (:active-storey @state) slab))))
  (doseq [[button-id kind] [["add-door" :door] ["add-window" :window]]]
    (.addEventListener (.getElementById js/document button-id) "click"
                       #(when-let [host (selected)]
@@ -51,21 +80,22 @@
                                  opening (bim/rectangular-opening {:id opening-id :offset offset :sill sill :width width :height height :filled-by id})
                                  hosted (bim/add-opening-to-wall host opening)
                                  fill ((if (= kind :door) bim/door bim/window) {:id id :host-id (:id host) :opening-id opening-id})
+                                 storey-id (:active-storey @state)
                                  p (-> (:project @state)
-                                       (bim/update-element 3 (:id host) (constantly hosted))
-                                       (bim/add-element 3 fill))]
+                                       (bim/update-element storey-id (:id host) (constantly hosted))
+                                       (bim/add-element storey-id fill))]
                              (swap! state update :next-id inc)
                              (swap! state assoc :selected id)
                              (commit! p))))))
- (.addEventListener (.getElementById js/document "apply") "click" #(when-let [e (selected)] (let [[[x y z] _] (get-in e [:geometry :axis]) len (num "length") updated (bim/wall {:id (:id e) :name (.-value (.getElementById js/document "name")) :start [x y z] :end [(+ x len) y z] :height (num "height") :thickness (num "thickness") :material (.-value (.getElementById js/document "material"))})] (commit! (bim/update-element (:project @state) 3 (:id e) (constantly updated))))))
+ (.addEventListener (.getElementById js/document "apply") "click" #(when-let [e (selected)] (let [[[x y z] _] (get-in e [:geometry :axis]) len (num "length") updated (bim/wall {:id (:id e) :name (.-value (.getElementById js/document "name")) :start [x y z] :end [(+ x len) y z] :height (num "height") :thickness (num "thickness") :material (.-value (.getElementById js/document "material"))})] (commit! (bim/update-element (:project @state) (:active-storey @state) (:id e) (constantly updated))))))
  (.addEventListener (.getElementById js/document "delete") "click"
                     #(when-let [e (selected)]
                        (let [p (if (#{:door :window} (:kind e))
                                  (let [[host-id opening-id] (:connected-to e)]
                                    (-> (:project @state)
-                                       (bim/update-element 3 host-id bim/remove-opening-from-wall opening-id)
-                                       (bim/delete-element 3 (:id e))))
-                                 (bim/delete-element (:project @state) 3 (:id e)))]
+                                       (bim/update-element (:active-storey @state) host-id bim/remove-opening-from-wall opening-id)
+                                       (bim/delete-element (:active-storey @state) (:id e))))
+                                 (bim/delete-element (:project @state) (:active-storey @state) (:id e)))]
                          (commit! p)
                          (swap! state assoc :selected (some-> (first (elements)) :id))
                          (refresh!))))
