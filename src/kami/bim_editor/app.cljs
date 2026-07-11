@@ -1,9 +1,10 @@
-(ns kami.bim-editor.app (:require [bim] [kami.webgpu.mesh :as gpu]))
+(ns kami.bim-editor.app (:require [cljs.reader :as reader] [bim] [kami.bim-editor.project :as project] [kami.webgpu.mesh :as gpu]))
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
                       :history [] :future [] :azimuth 0.75 :elevation 0.5
-                      :profile :revit :shortcut-buffer ""}))
+                      :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
+                      :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
 (defn- storeys [] (:storeys (bim/find-building (:project @state) 2)))
 (defn- elements [] (:elements (bim/find-storey (:project @state) (:active-storey @state))))
@@ -22,6 +23,7 @@
                                          :slabCount (count (filter #(= :slab (:kind %)) (all-elements)))
                                          :openingCount (reduce + (map #(count (:openings %)) (filter #(= :wall (:kind %)) (all-elements))))
                                          :selected (:selected @state) :profile (name (:profile @state))
+                                         :projectVersion project/current-version :revision (:revision @state) :saveStatus (name (:save-status @state))
                                          :shortcutBuffer (:shortcut-buffer @state)})))))
   (let [levels (.getElementById js/document "levels")]
     (set! (.-innerHTML levels) "")
@@ -49,7 +51,7 @@
         (set! (.-value (.getElementById js/document "length")) (get-in e [:quantities :length-m]))
         (set! (.-value (.getElementById js/document "height")) (get-in e [:geometry :profile :height]))
         (set! (.-value (.getElementById js/document "thickness")) (get-in e [:geometry :profile :thickness]))))))
-(defn- commit! [p] (swap! state (fn [s] (-> s (update :history conj (:project s)) (assoc :project p :future [])))) (refresh!))
+(defn- commit! [p] (swap! state (fn [s] (-> s (update :history conj (:project s)) (assoc :project p :future [] :save-status :dirty) (update :revision inc)))) (refresh!))
 (defn- draw! [] (when-let [{:keys [buffers] :as v} @viewport] (when buffers (let [{:keys [azimuth elevation]} @state d 14 eye [(+ 4 (* d (js/Math.cos elevation) (js/Math.cos azimuth))) (+ 3 (* d (js/Math.sin elevation))) (+ 3 (* d (js/Math.cos elevation) (js/Math.sin azimuth)))]] (gpu/render-frame! v buffers eye [4 1.5 3] [0.55 0.7 0.95])))) (js/requestAnimationFrame draw!))
 (defn- num [id] (js/parseFloat (.-value (.getElementById js/document id))))
 (defn- editable-target? [event]
@@ -59,6 +61,36 @@
 (def profile-shortcuts
   {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level" "f" "add-slab"}
    :vectorworks {"2" "add-wall" "d" "add-door" "w" "add-window" "l" "add-level" "f" "add-slab"}})
+(def ^:private storage-key "kami.bim-editor.project.v2")
+(def ^:private backup-key "kami.bim-editor.project.backup")
+(defn- project-document []
+  (let [{:keys [project-id project-name project active-storey selected azimuth elevation profile]} @state]
+    (project/document {:id project-id :name project-name :building-model project
+                       :editor {:active-storey active-storey :selected selected}
+                       :camera {:azimuth azimuth :elevation elevation} :interaction {:profile profile}})))
+(defn- save-project! []
+  (let [data (pr-str (project-document)) old (.getItem js/localStorage storage-key)]
+    (when old (.setItem js/localStorage backup-key old)) (.setItem js/localStorage storage-key data)
+    (swap! state assoc :save-status :saved) (refresh!)))
+(defn- apply-project! [value]
+  (let [p (project/open value) model (:project/building-model p) editor (:project/editor p)
+        camera (:project/camera p) interaction (:project/interaction p)
+        element-ids (map :id (mapcat :elements (mapcat :storeys (mapcat :buildings (:sites model)))))
+        storey-ids (map :id (mapcat :storeys (mapcat :buildings (:sites model))))]
+    (swap! state assoc :project-id (:project/id p) :project-name (:project/name p) :project model
+           :active-storey (:active-storey editor) :selected (:selected editor) :azimuth (:azimuth camera)
+           :elevation (:elevation camera) :profile (:profile interaction) :next-id (inc (reduce max 13 element-ids))
+           :next-storey-id (inc (reduce max 3 storey-ids)) :history [] :future [] :shortcut-buffer "" :save-status :saved)
+    (set! (.-value (.getElementById js/document "profile")) (name (:profile interaction))) (refresh!)))
+(defn- load-project! []
+  (when-let [data (.getItem js/localStorage storage-key)]
+    (try (apply-project! (reader/read-string data))
+         (catch :default _ (when-let [backup (.getItem js/localStorage backup-key)] (apply-project! (reader/read-string backup)))))))
+(defn- download-project! []
+  (let [a (.createElement js/document "a") url (.createObjectURL js/URL (js/Blob. #js [(pr-str (project-document))] #js {:type "application/edn"}))]
+    (set! (.-href a) url) (set! (.-download a) "building.kami-bim.edn") (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
+(defn- import-project! [event]
+  (when-let [file (aget (.. event -target -files) 0)] (-> (.text file) (.then #(apply-project! (reader/read-string %))))))
 (defn- invoke-shortcut! [event]
   (when-not (editable-target? event)
     (let [key (.toLowerCase (.-key event)) ctrl (or (.-ctrlKey event) (.-metaKey event)) profile (:profile @state)]
@@ -134,4 +166,8 @@
  (.addEventListener (.getElementById js/document "undo") "click" #(when-let [p (peek (:history @state))] (swap! state (fn [s] (assoc s :project p :history (pop (:history s)) :future (conj (:future s) (:project s))))) (refresh!)))
  (.addEventListener (.getElementById js/document "redo") "click" (fn [] (when-let [p (peek (:future @state))] (swap! state (fn [s] (assoc s :project p :future (pop (:future s)) :history (conj (:history s) (:project s))))) (refresh!))))
  (.addEventListener canvas "pointerdown" #(reset! drag [(.-clientX %) (.-clientY %)])) (.addEventListener js/window "pointerup" #(reset! drag nil)) (.addEventListener js/window "pointermove" (fn [e] (when-let [[x y] @drag] (swap! state update :azimuth + (* 0.008 (- (.-clientX e) x))) (swap! state update :elevation (fn [v] (max -1.2 (min 1.2 (+ v (* 0.008 (- (.-clientY e) y))))))) (reset! drag [(.-clientX e) (.-clientY e)]))))
- (.addEventListener (.getElementById js/document "export") "click" #(let [a (.createElement js/document "a")] (set! (.-href a) (.createObjectURL js/URL (js/Blob. #js [(pr-str (:project @state))] #js {:type "application/edn"}))) (set! (.-download a) "building.bim.edn") (.click a)))))
+ (.addEventListener (.getElementById js/document "save-project") "click" save-project!)
+ (.addEventListener (.getElementById js/document "load-project") "click" load-project!)
+ (.addEventListener (.getElementById js/document "import") "click" #(.click (.getElementById js/document "import-file")))
+ (.addEventListener (.getElementById js/document "import-file") "change" import-project!)
+ (.addEventListener (.getElementById js/document "export") "click" download-project!)))
