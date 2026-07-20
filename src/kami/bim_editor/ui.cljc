@@ -96,6 +96,18 @@
        [:label "Design flow (L/s)" [:input {:id "pipe-flow" :type "number" :min 0 :value 5}]]
        [:label "Gravity slope (%)" [:input {:id "pipe-slope" :type "number" :min 0 :step 0.1 :value 0}]]
        [:button {:id "route-pipe"} "Route pipe"] [:div {:id "engineering-status"} "Ready"]
+       [:h3 "Branched pipe network"]
+       [:label "Source" [:input {:id "mep-network-source" :value "0,2,2.5"}]]
+       [:label "Junction" [:input {:id "mep-network-junction" :value "4,2,2.5"}]]
+       [:label "Terminal A" [:input {:id "mep-network-terminal-a" :value "8,1,2.5"}]]
+       [:label "Terminal B" [:input {:id "mep-network-terminal-b" :value "8,4,2.5"}]]
+       [:label "Terminal A demand (L/s)"
+        [:input {:id "mep-network-demand-a" :type "number" :min 0.001 :value 3}]]
+       [:label "Terminal B demand (L/s)"
+        [:input {:id "mep-network-demand-b" :type "number" :min 0.001 :value 2}]]
+       [:label "Maximum velocity (m/s)"
+        [:input {:id "mep-network-max-velocity" :type "number" :min 0.1 :value 2}]]
+       [:button {:id "design-mep-network"} "Design + route branched network"]
        [:label "Equipment kind" [:select {:id "mep-equipment-kind"}
                                  [:option {:value "pump"} "Pump"]
                                  [:option {:value "air-terminal"} "Air terminal"]

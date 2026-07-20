@@ -691,6 +691,77 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "engineering-status"))
             (str "Route error: " (.-message error))))))
+(defn- point-distance [a b]
+  (js/Math.sqrt (reduce + (map (fn [left right]
+                                 (let [delta (- right left)] (* delta delta)))
+                               a b))))
+(defn- design-mep-network! []
+  (try
+    (let [source (parse-point "mep-network-source")
+          junction (parse-point "mep-network-junction")
+          terminal-a (parse-point "mep-network-terminal-a")
+          terminal-b (parse-point "mep-network-terminal-b")
+          demand-a (/ (num "mep-network-demand-a") 1000.0)
+          demand-b (/ (num "mep-network-demand-b") 1000.0)
+          max-velocity (num "mep-network-max-velocity")
+          network-id (str "network-" (:next-id @state))
+          edge-id #(str network-id "-" %)
+          design (family/size-and-balance-mep-network
+                  {:source-node :source
+                   :segments [{:id (edge-id "main") :from :source :to :junction
+                               :length-m (point-distance source junction)}
+                              {:id (edge-id "branch-a") :from :junction :to :terminal-a
+                               :length-m (point-distance junction terminal-a)
+                               :minor-loss-coefficient 1.0}
+                              {:id (edge-id "branch-b") :from :junction :to :terminal-b
+                               :length-m (point-distance junction terminal-b)
+                               :minor-loss-coefficient 1.0}]
+                   :terminal-demands {:terminal-a demand-a :terminal-b demand-b}}
+                  {:roughness-m 1.5e-6 :density-kg-m3 998.0 :viscosity-pa-s 0.001}
+                  {:available-diameters-m [0.025 0.032 0.04 0.05 0.063 0.075
+                                           0.09 0.1 0.125 0.15 0.2]
+                   :max-velocity-m-s max-velocity
+                   :equipment-efficiency 0.7 :pressure-safety-factor 1.1})
+          sized-by-id (into {} (map (juxt :id identity)
+                                    (:mep.network/segments design)))
+          assembly (mep/network-assembly
+                    {:id network-id :system-id :hydronic :domain :piping
+                     :nodes {:source {:point source} :junction {:point junction}
+                             :terminal-a {:point terminal-a}
+                             :terminal-b {:point terminal-b}}
+                     :edges (mapv (fn [{:keys [id from to] :as segment}]
+                                    {:id id :from from :to to
+                                     :size (:mep/diameter-m segment)})
+                                  (:mep.network/segments design))})
+          segments (mapv (fn [segment]
+                           (let [sizing (sized-by-id (:id segment))]
+                             (assoc segment
+                                    :mep/design-flow (:segment/flow-m3-s sizing)
+                                    :mep/velocity-m-s (:mep/velocity-m-s sizing)
+                                    :mep/pressure-loss-pa (:mep/pressure-loss-pa sizing))))
+                         (:mep.assembly/segments assembly))
+          fittings (:mep.assembly/fittings assembly)
+          system (family/mep-system
+                  {:id network-id :name network-id :kind :hydronic :medium :water
+                   :design-flow (:mep.network/source-flow-m3-s design)
+                   :segments segments :fittings fittings})
+          issues (family/validate-mep-system system)
+          _ (when (seq issues)
+              (throw (js/Error. (str "Invalid network: " (pr-str issues)))))
+          project (reduce #(bim/add-element %1 (:active-storey @state) %2)
+                          (:project @state) (concat segments fittings))
+          pressure (:mep.network/required-equipment-pressure-pa design)
+          power (:mep.network/equipment-power-w design)]
+      (swap! state update :next-id inc)
+      (select-only! (:id (first segments)))
+      (commit! project)
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Branched network · " (count segments) " segments · "
+                 (count fittings) " tee/fittings · " (.toFixed pressure 1)
+                 " Pa duty · " (.toFixed power 1) " W · balanced")))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Network error: " (.-message error))))))
 (defn- add-mep-equipment! []
   (try
     (let [id (:next-id @state)
@@ -974,6 +1045,8 @@
  (.addEventListener (.getElementById js/document "run-structural-analysis") "click"
                     run-structural-analysis!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
+ (.addEventListener (.getElementById js/document "design-mep-network") "click"
+                    design-mep-network!)
  (.addEventListener (.getElementById js/document "add-mep-equipment") "click"
                     add-mep-equipment!)
  (.addEventListener (.getElementById js/document "connect-mep-elements") "click"
