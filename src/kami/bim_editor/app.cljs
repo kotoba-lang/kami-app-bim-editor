@@ -570,6 +570,55 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "structural-model-status"))
             (str "Error: " (.-message error))))))
+(defn- generate-structural-loads! []
+  (try
+    (let [model (or (:structural-model @state)
+                    (family/generate-structural-model (:project @state)))
+          area-pressure (* 1000.0 (num "structural-area-load"))
+          wind-pressure (* 1000.0 (num "structural-wind-pressure"))
+          seismic-coefficient (num "structural-seismic-coefficient")
+          diaphragm-pressures
+          (into {} (keep (fn [shell]
+                           (when (contains? #{:floor :diaphragm}
+                                            (:structural.shell/role shell))
+                             [(:structural.shell/id shell) area-pressure])))
+                (:structural/shells model))
+          area-case (family/structural-area-load-case
+                     model {:id :live :name "Floor live load"
+                            :pressures-pa diaphragm-pressures})
+          wind-case (family/structural-wind-load-case
+                     model {:id :wind :name "Wind +X" :pressure-pa wind-pressure
+                            :direction [1 0 0]})
+          node-elevations (map #(nth (:structural.node/point %) 2)
+                               (:structural/nodes model))
+          seismic-ready? (and (some :structural.member/density-kg-m3
+                                    (:structural/members model))
+                              (seq node-elevations)
+                              (< (reduce min node-elevations) (reduce max node-elevations)))
+          seismic-case (when seismic-ready?
+                         (family/structural-seismic-load-case
+                          model {:id :seismic :coefficient seismic-coefficient
+                                 :direction [1 0 0]}))
+          generated (cond-> [area-case wind-case] seismic-case (conj seismic-case))
+          generated-ids (set (map :structural.load-case/id generated))
+          cases (into (vec (remove #(contains? generated-ids
+                                               (:structural.load-case/id %))
+                                   (:structural/load-cases model))) generated)
+          factors (cond-> {:dead 1.35 :live 1.5 :wind 1.5}
+                    seismic-case (assoc :seismic 1.0))
+          combination (family/structural-load-combination
+                       {:id :design-uls :name "Generated ULS" :kind :ultimate
+                        :factors factors})
+          model (assoc model :structural/load-cases cases
+                             :structural/combinations [combination])]
+      (swap! state assoc :structural-model model)
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str (count cases) " load cases · "
+                 (reduce + (map #(count (:structural.load-case/nodal-loads %)) generated))
+                 " nodal loads · ULS ready")))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str "Error: " (.-message error))))))
 (defn- route-pipe! []
   (let [start (parse-point "pipe-start") end (parse-point "pipe-end")
         diameter (num "pipe-diameter")
@@ -824,6 +873,8 @@
                     assign-structural-role!)
  (.addEventListener (.getElementById js/document "generate-structural-model") "click"
                     generate-structural-model!)
+ (.addEventListener (.getElementById js/document "generate-structural-loads") "click"
+                    generate-structural-loads!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "save-drawing-annotation") "click"
                     save-drawing-annotation!)
