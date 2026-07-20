@@ -14,6 +14,7 @@
                 "family-width" "family-material" "family-shared" "family-detail"
                 "save-family-definition" "family-type-name" "save-family-type"
                 "family-status" "analyze-structure" "route-pipe"
+                "pipe-start" "pipe-end" "pipe-diameter" "pipe-flow" "pipe-slope"
                 "structural-role" "structural-width" "structural-depth"
                 "assign-structural-role" "generate-structural-model" "structural-model-status"
                 "structural-area-load" "structural-wind-pressure"

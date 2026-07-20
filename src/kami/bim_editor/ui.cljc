@@ -93,6 +93,8 @@
        [:label "Pipe start" [:input {:id "pipe-start" :value "0,3,2.5"}]]
        [:label "Pipe end" [:input {:id "pipe-end" :value "8,3,2.5"}]]
        [:label "Pipe diameter (m)" [:input {:id "pipe-diameter" :type "number" :value 0.1}]]
+       [:label "Design flow (L/s)" [:input {:id "pipe-flow" :type "number" :min 0 :value 5}]]
+       [:label "Gravity slope (%)" [:input {:id "pipe-slope" :type "number" :min 0 :step 0.1 :value 0}]]
        [:button {:id "route-pipe"} "Route pipe"] [:div {:id "engineering-status"} "Ready"]
        [:label "Equipment kind" [:select {:id "mep-equipment-kind"}
                                  [:option {:value "pump"} "Pump"]

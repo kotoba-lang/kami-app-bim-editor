@@ -1,4 +1,5 @@
 (ns kami.bim-editor.app (:require [cljs.reader :as reader] [clojure.string :as string] [bim]
+                                  [bim.mep :as mep]
                                   [bim.editor :as editor]
                                   [bim.integration :as family]
                                   [bim.drawing :as drawing] [ifc.core :as ifc]
@@ -651,25 +652,45 @@
       (set! (.-textContent (.getElementById js/document "structural-model-status"))
             (str "Analysis error: " (.-message error))))))
 (defn- route-pipe! []
-  (let [start (parse-point "pipe-start") end (parse-point "pipe-end")
-        diameter (num "pipe-diameter")
-        obstacles (vec (keep element-obstacle (all-elements)))
-        path (family/route-mep start end obstacles {:step 0.25 :clearance diameter})]
-    (if (< (count path) 2)
-      (set! (.-textContent (.getElementById js/document "engineering-status")) "No route found")
-      (let [first-id (:next-id @state)
-            segments (mapv (fn [index [a b]]
-                             (family/mep-segment
-                              {:id (+ first-id index) :name (str "Pipe " (+ first-id index))
-                               :kind :pipe :start a :end b :diameter diameter :system-id :hydronic}))
-                           (range) (partition 2 1 path))
-            project (reduce #(bim/add-element %1 (:active-storey @state) %2)
-                            (:project @state) segments)]
-        (swap! state update :next-id + (count segments))
-        (select-only! (:id (first segments)))
+  (try
+    (let [start (parse-point "pipe-start") end (parse-point "pipe-end")
+          diameter (num "pipe-diameter")
+          flow (/ (num "pipe-flow") 1000.0)
+          slope (/ (num "pipe-slope") 100.0)
+          obstacles (vec (keep element-obstacle (all-elements)))
+          raw-path (family/route-mep start end obstacles
+                                     {:step 0.25 :clearance diameter})]
+      (if (< (count raw-path) 2)
         (set! (.-textContent (.getElementById js/document "engineering-status"))
-              (str (count segments) " routed segments"))
-        (commit! project)))))
+              "No route found")
+        (let [path (if (pos? slope)
+                     (family/grade-mep-route raw-path slope)
+                     raw-path)
+              route-id (str "route-" (:next-id @state))
+              assembly (mep/route-assembly
+                        {:id route-id :system-id :hydronic :domain :piping
+                         :shape :round :size diameter :points path})
+              segments (:mep.assembly/segments assembly)
+              fittings (:mep.assembly/fittings assembly)
+              system (family/mep-system
+                      {:id route-id :name route-id :kind :hydronic :medium :water
+                       :design-flow flow :segments segments :fittings fittings})
+              analysis (family/analyze-mep-system
+                        system {:roughness-m 1.5e-6 :density-kg-m3 998.0
+                                :viscosity-pa-s 0.001})
+              elements (concat segments fittings)
+              project (reduce #(bim/add-element %1 (:active-storey @state) %2)
+                              (:project @state) elements)
+              loss (:mep.analysis/total-pressure-loss-pa analysis)]
+          (swap! state update :next-id inc)
+          (select-only! (:id (first segments)))
+          (set! (.-textContent (.getElementById js/document "engineering-status"))
+                (str (count segments) " segments · " (count fittings)
+                     " fittings · " (.toFixed loss 1) " Pa"))
+          (commit! project))))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Route error: " (.-message error))))))
 (defn- add-mep-equipment! []
   (try
     (let [id (:next-id @state)
