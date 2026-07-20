@@ -37,7 +37,12 @@
                       :camera-target [4.0 1.5 3.0] :camera-distance 14.0
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
                       :drawing-views {3 (family/drawing-view
-                                         {:id "plan-3" :kind :floor-plan :name "Ground Floor"})}
+                                         {:id "plan-3" :kind :floor-plan :name "Ground Floor"
+                                          :view-range {:top 3.2 :cut-plane 1.2
+                                                       :bottom 0 :view-depth -1}})}
+                      :print-setting (family/print-setting
+                                      {:id :default :name "Default" :paper-size :a1
+                                       :orientation :landscape :scale 100})
                       :selected-annotation nil :next-annotation-id 1
                       :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
@@ -408,6 +413,40 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "drawing-annotation-status"))
             (str "Error: " (.-message error))))))
+(defn- apply-view-range! []
+  (try
+    (let [range (family/view-range {:top (num "view-range-top")
+                                    :cut-plane (num "view-range-cut")
+                                    :bottom (num "view-range-bottom")
+                                    :view-depth (num "view-range-depth")})
+          storey-id (:active-storey @state)
+          view (assoc (active-drawing-view) :view/view-range range)]
+      (swap! state assoc-in [:drawing-views storey-id] view)
+      (swap! state assoc :save-status :dirty)
+      (swap! state update :revision inc)
+      (set! (.-textContent (.getElementById js/document "drawing-annotation-status"))
+            "View range applied")
+      (refresh!))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "drawing-annotation-status"))
+            (str "Error: " (.-message error))))))
+(defn- apply-print-setting! []
+  (try
+    (let [setting (family/print-setting
+                   {:id :project-print :name "Project print"
+                    :paper-size (keyword (.-value (.getElementById js/document "print-paper")))
+                    :orientation (keyword (.-value (.getElementById js/document "print-orientation")))
+                    :scale (num "print-scale")
+                    :color-mode (keyword (.-value (.getElementById js/document "print-color")))
+                    :margins-mm [5 5 5 5]})]
+      (swap! state assoc :print-setting setting :save-status :dirty)
+      (swap! state update :revision inc)
+      (set! (.-textContent (.getElementById js/document "print-status"))
+            (str (name (:print-setting/paper-size setting)) " · 1:"
+                 (:print-setting/scale setting))));
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "print-status"))
+            (str "Error: " (.-message error))))))
 (defn- parse-material-layers [id]
   (mapv (fn [spec]
           (let [parts (mapv string/trim (string/split spec #":"))
@@ -487,10 +526,11 @@
 (def ^:private backup-key "kami.bim-editor.project.backup")
 (defn- project-document []
   (let [{:keys [project-id project-name project active-storey selected azimuth elevation
-                camera-target camera-distance profile drawing-views]} @state]
+                camera-target camera-distance profile drawing-views print-setting]} @state]
     (project/document {:id project-id :name project-name :building-model project
                        :family-catalog (:family-catalog @state)
                        :drawings drawing-views
+                       :print-setting print-setting
                        :editor {:active-storey active-storey :selected selected
                                 :selection (vec (selection-ids))}
                        :camera {:azimuth azimuth :elevation elevation :target camera-target
@@ -519,11 +559,31 @@
            :family-catalog (if (seq (:project/family-catalog p))
                              (:project/family-catalog p) (initial-family-catalog))
            :drawing-views (:project/drawings p)
+           :print-setting (if (seq (:project/print-setting p))
+                            (:project/print-setting p)
+                            (family/print-setting {:id :default :paper-size :a1
+                                                   :orientation :landscape :scale 100}))
            :selected-annotation nil
            :next-annotation-id
            (inc (reduce max 0 (keep #(when (number? (:annotation/id %)) (:annotation/id %))
                                     (mapcat :view/annotations (vals (:project/drawings p))))))
            :selected-space nil :history [] :future [] :shortcut-buffer "" :save-status :saved)
+    (when-let [range (get-in (:project/drawings p)
+                             [(:active-storey editor) :view/view-range])]
+      (doseq [[id value] [["view-range-top" (:top range)]
+                          ["view-range-cut" (:cut-plane range)]
+                          ["view-range-bottom" (:bottom range)]
+                          ["view-range-depth" (:view-depth range)]]]
+        (set! (.-value (.getElementById js/document id)) value)))
+    (when-let [setting (not-empty (:project/print-setting p))]
+      (set! (.-value (.getElementById js/document "print-paper"))
+            (name (:print-setting/paper-size setting)))
+      (set! (.-value (.getElementById js/document "print-orientation"))
+            (name (:print-setting/orientation setting)))
+      (set! (.-value (.getElementById js/document "print-scale"))
+            (:print-setting/scale setting))
+      (set! (.-value (.getElementById js/document "print-color"))
+            (name (:print-setting/color-mode setting))))
     (set! (.-value (.getElementById js/document "profile")) (name (:profile interaction))) (refresh!)))
 (defn- load-project! []
   (when-let [data (.getItem js/localStorage storage-key)]
@@ -557,8 +617,10 @@
         building (some-> model :sites first :buildings first)
         kind (keyword (.-value (.getElementById js/document "drawing-kind")))
         format (keyword (.-value (.getElementById js/document "drawing-format")))
-        annotations (get-in @state [:drawing-views (:active-storey @state) :view/annotations])
-        plan (when storey (drawing/documented-floor-plan storey {:annotations annotations}))
+        active-view (active-drawing-view)
+        annotations (:view/annotations active-view)
+        view-options {:annotations annotations :view-range (:view/view-range active-view)}
+        plan (when storey (drawing/documented-floor-plan storey view-options))
         section (when building (drawing/orthographic-view building
                                                            {:kind :section :axis :x
                                                             :cut-position 0.0 :depth 20.0
@@ -576,12 +638,13 @@
           :sheet ["sheet-A-001.svg"
                   (drawing/drawing-sheet-svg
                    {:number "A-001" :name "General Arrangements" :size :a1 :revision "P01"
+                    :print-setting (:print-setting @state)
                     :viewports [{:view plan :x 20 :y 20 :width 380 :height 260
                                  :title (:name storey) :scale 100}
                                 {:view section :x 430 :y 20 :width 380 :height 260
                                  :title "Section A" :scale 50}]})]
           [(str "floor-plan-" (:id storey) ".svg")
-           (drawing/documented-floor-plan-svg storey {:annotations annotations})])]
+           (drawing/documented-floor-plan-svg storey view-options)])]
     (case format
       :dxf (let [{:keys [filename media-type content]}
                  (integration/export-drawing model (:active-storey @state) :dxf
@@ -589,7 +652,8 @@
              (download-text! filename media-type content))
       :pdf (let [{:keys [filename media-type content]}
                  (integration/export-drawing model (:active-storey @state) :pdf
-                                             (:drawing-views @state))]
+                                             (:drawing-views @state)
+                                             (:print-setting @state))]
              (download-bytes! filename media-type content))
       (when content (download-text! filename "image/svg+xml" content)))))
 (defn- import-ifc! [event]
@@ -669,6 +733,10 @@
                     save-drawing-annotation!)
  (.addEventListener (.getElementById js/document "new-drawing-annotation") "click"
                     new-drawing-annotation!)
+ (.addEventListener (.getElementById js/document "apply-view-range") "click"
+                    apply-view-range!)
+ (.addEventListener (.getElementById js/document "apply-print-setting") "click"
+                    apply-print-setting!)
  (.addEventListener (.getElementById js/document "family-definition") "change" refresh-family-types!)
  (refresh-family-definitions!)
  (refresh-family-types!)

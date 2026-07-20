@@ -33,6 +33,9 @@
                 "drawing-annotation-text" "drawing-annotation-revision"
                 "save-drawing-annotation" "new-drawing-annotation"
                 "drawing-annotations" "drawing-annotation-status"
+                "view-range-top" "view-range-cut" "view-range-bottom" "view-range-depth"
+                "apply-view-range" "print-paper" "print-orientation" "print-scale"
+                "print-color" "apply-print-setting" "print-status"
                 "drawing-format" "export-drawing" "import-ifc-file"]]
       (is (string/includes? page (str "id=\"" id "\""))))
     (is (string/includes? page "value=\"pdf\""))

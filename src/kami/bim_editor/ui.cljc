@@ -92,6 +92,11 @@
        [:h2 "Model tree"] [:div {:id "tree"}]
        [:h2 "Quantity schedule"] [:button {:id "export-schedule"} "Export CSV"] [:div {:id "quantity-schedule"}]
        [:h2 "Drawing annotations"]
+       [:label "View top" [:input {:id "view-range-top" :type "number" :step 0.1 :value 3.2}]]
+       [:label "Cut plane" [:input {:id "view-range-cut" :type "number" :step 0.1 :value 1.2}]]
+       [:label "View bottom" [:input {:id "view-range-bottom" :type "number" :step 0.1 :value 0}]]
+       [:label "View depth" [:input {:id "view-range-depth" :type "number" :step 0.1 :value -1}]]
+       [:button {:id "apply-view-range"} "Apply view range"]
        [:label "Kind" [:select {:id "drawing-annotation-kind"}
                        [:option {:value "dimension"} "Dimension"]
                        [:option {:value "tag"} "Tag"]
@@ -104,6 +109,20 @@
        [:button {:id "new-drawing-annotation"} "New annotation"]
        [:div {:id "drawing-annotations"}]
        [:div {:id "drawing-annotation-status"} "Annotations ready"]
+       [:h2 "Print setup"]
+       [:label "Paper" [:select {:id "print-paper"}
+                        (for [value ["a0" "a1" "a2" "a3" "a4" "letter" "legal" "tabloid"]]
+                          [:option {:value value :selected (= value "a1")} value])]]
+       [:label "Orientation" [:select {:id "print-orientation"}
+                              [:option {:value "landscape"} "Landscape"]
+                              [:option {:value "portrait"} "Portrait"]]]
+       [:label "Scale denominator" [:input {:id "print-scale" :type "number" :min 1 :value 100}]]
+       [:label "Color" [:select {:id "print-color"}
+                        [:option {:value "color"} "Color"]
+                        [:option {:value "grayscale"} "Grayscale"]
+                        [:option {:value "black-lines"} "Black lines"]]]
+       [:button {:id "apply-print-setting"} "Apply print setup"]
+       [:div {:id "print-status"} "Print ready"]
        [:h2 "Clash Detection"] [:button.primary {:id "run-clashes"} "Run Clash Check"]
        [:button {:id "export-clashes"} "Export Clash CSV"] [:div {:id "clash-results"} "No clashes"]]
       [:section.viewport [:canvas {:id "gpu-canvas" :aria-label "BIM WebGPU viewport"}]
