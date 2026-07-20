@@ -259,12 +259,15 @@
   (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
 (def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level"
-                      "fl" "add-slab" "mv" "move-element" "co" "copy-element"})
+                      "fl" "add-slab" "mv" "move-element" "co" "copy-element"
+                      "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"})
 (def profile-shortcuts
   {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level"
-              "f" "add-slab" "m" "move-element" "c" "copy-element"}
+              "f" "add-slab" "m" "move-element" "c" "copy-element"
+              "r" "rotate-element" "i" "mirror-element" "a" "array-element"}
    :vectorworks {"2" "add-wall" "d" "add-door" "w" "add-window" "l" "add-level"
-                 "f" "add-slab" "m" "move-element" "c" "copy-element"}})
+                 "f" "add-slab" "m" "move-element" "c" "copy-element"
+                 "r" "rotate-element" "i" "mirror-element" "a" "array-element"}})
 (def ^:private storage-key "kami.bim-editor.project.v2")
 (def ^:private backup-key "kami.bim-editor.project.backup")
 (defn- project-document []
@@ -474,6 +477,45 @@
                                p (bim/add-element (:project @state) (:active-storey @state) copy)]
                            (swap! state assoc :next-id (inc id) :selected id)
                            (commit! p)))))
+ (.addEventListener (.getElementById js/document "rotate-element") "click"
+                    #(when-let [e (selected)]
+                       (when (bim/element-mesh e)
+                         (let [pivot [(num "pivot-x") (num "pivot-y") (num "pivot-z")]
+                               angle (* (num "transform-angle") (/ js/Math.PI 180.0))]
+                           (commit! (bim/update-element (:project @state) (:active-storey @state)
+                                                        (:id e) bim/rotate-element-z pivot angle))))))
+ (.addEventListener (.getElementById js/document "mirror-element") "click"
+                    #(when-let [e (selected)]
+                       (when (bim/element-mesh e)
+                         (let [origin [(num "pivot-x") (num "pivot-y") (num "pivot-z")]
+                               normal [(num "mirror-x") (num "mirror-y") (num "mirror-z")]]
+                           (commit! (bim/update-element (:project @state) (:active-storey @state)
+                                                        (:id e) bim/mirror-element origin normal))))))
+ (.addEventListener (.getElementById js/document "array-element") "click"
+                    #(when-let [e (selected)]
+                       (when (bim/element-mesh e)
+                         (let [count-value (num "array-count")]
+                           (when (and (js/Number.isInteger count-value) (<= 1 count-value 100))
+                             (let [start-id (:next-id @state)
+                                   identities (mapv (fn [offset]
+                                                      (let [id (+ start-id offset)]
+                                                        {:id id :global-id (str id)}))
+                                                    (range count-value))
+                                   kind (keyword (.-value (.getElementById js/document "array-kind")))
+                                   copies (if (= :radial kind)
+                                            (bim/radial-array
+                                             e identities
+                                             [(num "pivot-x") (num "pivot-y") (num "pivot-z")]
+                                             (* (num "transform-angle") (/ js/Math.PI 180.0)))
+                                            (bim/linear-array
+                                             e identities
+                                             [(num "move-x") (num "move-y") (num "move-z")]))
+                                   p (reduce (fn [project copy]
+                                               (bim/add-element project (:active-storey @state) copy))
+                                             (:project @state) copies)]
+                               (swap! state assoc :next-id (+ start-id count-value)
+                                      :selected (:id (first copies)))
+                               (commit! p)))))))
  (.addEventListener (.getElementById js/document "delete") "click"
                     #(when-let [e (selected)]
                        (let [p (if (#{:door :window} (:kind e))
