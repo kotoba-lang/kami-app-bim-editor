@@ -193,6 +193,16 @@
         (set! (.-value (.getElementById js/document "height")) (get-in e [:geometry :profile :height]))
         (set! (.-value (.getElementById js/document "thickness")) (get-in e [:geometry :profile :thickness]))))))
 (defn- commit! [p] (swap! state (fn [s] (-> s (update :history conj (:project s)) (assoc :project p :future [] :save-status :dirty) (update :revision inc)))) (refresh!))
+(defn- authoring-commit! [label operation]
+  (try
+    (if-let [project (operation)]
+      (do (commit! project)
+          (set! (.-textContent (.getElementById js/document "authoring-status")) label))
+      (set! (.-textContent (.getElementById js/document "authoring-status"))
+            (str label " unavailable")))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "authoring-status"))
+            (str "Error: " (.-message error))))))
 (defn- camera-state []
   (let [{:keys [azimuth elevation camera-target camera-distance]} @state
         [tx ty tz] camera-target d camera-distance]
@@ -311,7 +321,9 @@
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
 (def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level"
                       "fl" "add-slab" "mv" "move-element" "co" "copy-element"
-                      "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"})
+                      "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
+                      "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
+                      "wj" "join-walls"})
 (def profile-shortcuts
   {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level"
               "f" "add-slab" "m" "move-element" "c" "copy-element"
@@ -624,6 +636,49 @@
                                       :selected (:id (first copies))
                                       :selection (set (map :id copies)))
                                (commit! p)))))))
+ (.addEventListener (.getElementById js/document "align-elements") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Aligned"
+                       (fn []
+                         (let [chosen (selected-elements) reference (selected)]
+                           (when (= 2 (count chosen))
+                             (let [moving (first (remove #(= (:id reference) (:id %)) chosen))
+                                   aligned (bim/align-element
+                                            reference moving
+                                            {:axis (keyword (.-value (.getElementById js/document "align-axis")))
+                                             :reference-anchor
+                                             (keyword (.-value (.getElementById js/document "align-reference-anchor")))
+                                             :moving-anchor
+                                             (keyword (.-value (.getElementById js/document "align-moving-anchor")))})]
+                               (bim/update-element (:project @state)
+                                                   (element-storey-id (:id moving)) (:id moving)
+                                                   (constantly aligned)))))))))
+ (.addEventListener (.getElementById js/document "offset-walls") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Walls offset"
+                       (fn []
+                         (let [walls (filterv #(= :wall (:kind %)) (selected-elements))]
+                           (when (seq walls)
+                             (transform-project (:project @state) walls bim/offset-wall
+                                                (num "wall-offset"))))))))
+ (doseq [[button-id label operation]
+         [["trim-walls" "Walls trimmed / extended" bim/trim-extend-walls]
+          ["join-walls" "Walls joined" bim/join-walls]]]
+   (.addEventListener (.getElementById js/document button-id) "click"
+                      (fn [_]
+                        (authoring-commit!
+                         label
+                         (fn []
+                           (let [walls (filterv #(= :wall (:kind %)) (selected-elements))]
+                             (when (= 2 (count walls))
+                               (when-let [[left right] (operation (first walls) (second walls))]
+                                 (-> (:project @state)
+                                     (bim/update-element (element-storey-id (:id left)) (:id left)
+                                                         (constantly left))
+                                     (bim/update-element (element-storey-id (:id right)) (:id right)
+                                                         (constantly right)))))))))))
  (.addEventListener (.getElementById js/document "delete") "click"
                     #(when-let [e (selected)]
                        (let [p (if (#{:door :window} (:kind e))
