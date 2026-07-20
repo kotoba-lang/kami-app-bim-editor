@@ -338,6 +338,7 @@
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
 (def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level"
                       "fl" "add-slab" "rf" "add-roof" "st" "add-stair" "rl" "add-railing"
+                      "cw" "add-curtain"
                       "mv" "move-element" "co" "copy-element"
                       "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
@@ -601,6 +602,22 @@
                                          :post-spacing (num "railing-spacing")})]
                            (swap! state assoc :next-id (inc id) :selected id :selection #{id})
                            (bim/add-element (:project @state) (:active-storey @state) railing))))))
+ (.addEventListener (.getElementById js/document "add-curtain") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Curtain wall added"
+                       (fn []
+                         (let [id (:next-id @state)
+                               storey (bim/find-storey (:project @state) (:active-storey @state))
+                               z (:elevation storey) width (num "curtain-width")
+                               curtain (bim/curtain-wall
+                                        {:id id :name (str "Curtain Wall " id)
+                                         :start [0.0 0.0 z] :end [width 0.0 z]
+                                         :height (num "curtain-height")
+                                         :columns (num "curtain-columns")
+                                         :rows (num "curtain-rows")})]
+                           (swap! state assoc :next-id (inc id) :selected id :selection #{id})
+                           (bim/add-element (:project @state) (:active-storey @state) curtain))))))
  (.addEventListener (.getElementById js/document "add-room") "click"
                     #(let [id (:next-space-id @state) storey (bim/find-storey (:project @state) (:active-storey @state))
                            z (:elevation storey) width (max 0.1 (num "room-width")) depth (max 0.1 (num "room-depth"))
