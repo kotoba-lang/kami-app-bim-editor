@@ -24,6 +24,7 @@
                 "slab-layers" "apply-slab-layers" "shaft-x" "shaft-y"
                 "slab-elevations" "apply-slab-shape"
                 "shaft-width" "shaft-depth" "add-shaft-opening"
+                "host-offset" "host-sill" "rehost-element"
                 "add-room" "auto-rooms" "quantity-schedule" "clash-results" "drawing-kind"
                 "drawing-format" "export-drawing" "import-ifc-file"]]
       (is (string/includes? page (str "id=\"" id "\""))))

@@ -346,7 +346,7 @@
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
                       "wj" "join-walls" "wl" "apply-wall-layers"
                       "sl" "apply-slab-layers" "se" "apply-slab-shape"
-                      "so" "add-shaft-opening"})
+                      "so" "add-shaft-opening" "rh" "rehost-element"})
 (def profile-shortcuts
   {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level"
               "f" "add-slab" "m" "move-element" "c" "copy-element"
@@ -859,6 +859,19 @@
                                           (:id floor) bim/add-opening-to-slab opening)]
                              (swap! state update :next-id inc)
                              project))))))
+ (.addEventListener (.getElementById js/document "rehost-element") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Hosted element moved"
+                       (fn []
+                         (let [chosen (selected-elements)
+                               hosted (first (filter #(contains? #{:door :window} (:kind %)) chosen))
+                               host (first (filter #(= :wall (:kind %)) chosen))]
+                           (when (and hosted host)
+                             (bim/rehost-wall-element
+                              (:project @state) (element-storey-id (:id hosted))
+                              (:id hosted) (:id host)
+                              {:offset (num "host-offset") :sill (num "host-sill")})))))))
  (.addEventListener (.getElementById js/document "delete") "click"
                     #(when-let [e (selected)]
                        (let [p (if (#{:door :window} (:kind e))
