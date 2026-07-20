@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [bim]
             [ifc.core :as ifc]
+            [pdf.core :as pdf]
             [kami.bim-editor.integration :as integration]))
 
 (defn model []
@@ -46,3 +47,22 @@
     (is (= "application/pdf" (:media-type pdf)))
     (is (= "%PDF" (subs pdf-text 0 4)))
     (is (re-find #"Rated wall" pdf-text))))
+
+(deftest publishes-persistent-semantic-drawing-set
+  (let [project (model)
+        drawing-set {:drawing/views
+                     [{:view/id "plan-3" :view/kind :floor-plan
+                       :view/name "Ground Plan" :view/storey-id 3}]
+                     :drawing/schedules []
+                     :drawing/sheets
+                     [{:sheet/id "cover" :sheet/number "G-001" :sheet/name "Cover"
+                       :sheet/views []}
+                      {:sheet/id "plan" :sheet/number "A-101" :sheet/name "Floor Plans"
+                       :sheet/views ["plan-3"]
+                       :sheet/title-block {:title-block/project "House"}}]}
+        export (integration/export-drawing project 3 :pdf {} nil drawing-set)
+        parsed (pdf/parse (:content export))
+        pages (pdf/pages parsed)]
+    (is (= 2 (count pages)))
+    (is (= "G-001  Cover" (first (pdf/page-text (:objects parsed) (first pages)))))
+    (is (= "A-101  Floor Plans" (first (pdf/page-text (:objects parsed) (second pages)))))))

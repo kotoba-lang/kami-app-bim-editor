@@ -1213,7 +1213,8 @@
       :pdf (let [{:keys [filename media-type content]}
                  (integration/export-drawing model (:active-storey @state) :pdf
                                              (:drawing-views @state)
-                                             (:print-setting @state))]
+                                             (:print-setting @state)
+                                             (not-empty (:drawing-set @state)))]
              (download-bytes! filename media-type content))
       (when content (download-text! filename "image/svg+xml" content)))))
 (defn- import-ifc! [event]
