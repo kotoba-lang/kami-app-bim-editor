@@ -265,6 +265,12 @@
         url (.createObjectURL js/URL (js/Blob. #js [value] #js {:type mime}))]
     (set! (.-href a) url) (set! (.-download a) filename)
     (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
+(defn- download-bytes! [filename mime bytes]
+  (let [a (.createElement js/document "a")
+        data (js/Uint8Array. (clj->js bytes))
+        url (.createObjectURL js/URL (js/Blob. #js [data] #js {:type mime}))]
+    (set! (.-href a) url) (set! (.-download a) filename)
+    (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
 (defn- download-ifc! []
   (download-text! "building.ifc" "application/x-step"
                   (ifc/write-spf (integration/coordinated-ifc (:project @state)))))
@@ -273,6 +279,7 @@
         storey (bim/find-storey model (:active-storey @state))
         building (some-> model :sites first :buildings first)
         kind (keyword (.-value (.getElementById js/document "drawing-kind")))
+        format (keyword (.-value (.getElementById js/document "drawing-format")))
         plan (when storey (drawing/documented-floor-plan storey))
         section (when building (drawing/orthographic-view building
                                                            {:kind :section :axis :x
@@ -297,7 +304,14 @@
                                  :title "Section A" :scale 50}]})]
           [(str "floor-plan-" (:id storey) ".svg")
            (drawing/documented-floor-plan-svg storey)])]
-    (when content (download-text! filename "image/svg+xml" content))))
+    (case format
+      :dxf (let [{:keys [filename media-type content]}
+                 (integration/export-drawing model (:active-storey @state) :dxf)]
+             (download-text! filename media-type content))
+      :pdf (let [{:keys [filename media-type content]}
+                 (integration/export-drawing model (:active-storey @state) :pdf)]
+             (download-bytes! filename media-type content))
+      (when content (download-text! filename "image/svg+xml" content)))))
 (defn- import-ifc! [event]
   (when-let [file (aget (.. event -target -files) 0)]
     (-> (.text file) (.then #(apply-project! (integration/import-ifc-spf %))))))

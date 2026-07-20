@@ -8,39 +8,31 @@
 body { margin: 0; height: 100vh; display: grid; grid-template-rows: 52px 1fr; font-family: Inter,system-ui; background: #09101c; color: #e7ecfa; }
 .selected { border-color: #9fb9ff; background: #314a82; }
 label { display: grid; gap: 4px; margin: 9px 0; }
-button,input { width: 100%; margin: 5px 0; padding: 8px; background: #20315b; border: 1px solid #526fa9; border-radius: 5px; color: #e7ecfa; }
-h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: #a7b9e0; }
-main { display: grid; grid-template-columns: 240px 1fr 280px; min-height: 0; }
+h2 { font-size: 11px; margin-top: 20px; text-transform: uppercase; letter-spacing: .1em; color: #a7b9e0; }
+button,input,select { width: 100%; margin: 5px 0; padding: 8px; background: #20315b; border: 1px solid #526fa9; border-radius: 5px; color: #e7ecfa; }
+main { display: grid; grid-template-columns: 260px 1fr 300px; min-height: 0; }
 header .spacer { flex: 1; }
 #gpu-canvas { width: 100%; height: 100%; display: block; }
 #gpu-status { position: absolute; left: 50%; top: 45%; transform: translate(-50%,-50%); color: #ffb0b0; }
-aside { padding: 16px; background: #111a34; border-right: 1px solid #2d3e68; }
-header { padding: 0 16px; display: flex; align-items: center; gap: 18px; background: #121c38; }
-button { cursor: pointer; text-align: left; } :focus-visible { outline: 3px solid #ffd166; outline-offset: 2px; }</style></head>
+header button,header select { width: auto; white-space: nowrap; }
+aside { padding: 16px; overflow-y: auto; background: #111a34; border-right: 1px solid #2d3e68; }
+header { padding: 0 16px; display: flex; align-items: center; gap: 8px; overflow-x: auto; background: #121c38; }
+button { cursor: pointer; text-align: left; }</style></head>
   <body>
-    <header>
-      <strong>KAMI BIM EDITOR</strong>
-      <a href="https://kotoba-lang.github.io/kami-studio/">Studio</a>
-      <span>Semantic building workspace</span>
-      <span class="spacer"></span>
-      <select id="profile" aria-label="Interaction profile">
-        <option value="revit">Revit</option>
-        <option value="archicad">Archicad</option>
-        <option value="vectorworks">Vectorworks</option>
-      </select>
-      <button id="undo">Undo</button>
-      <button id="redo">Redo</button>
-      <button id="save-project">Save</button>
-      <button id="load-project">Load</button>
-      <button id="import">Import</button>
-      <input id="import-file" aria-label="Import BIM project file" type="file" accept=".edn,.kami-bim.edn" style="display:none;">
-      <button id="export">Export Project</button>
-      <button id="export-ifc">Export IFC</button>
-      <button id="import-ifc">Import IFC</button>
-      <input id="import-ifc-file" aria-label="Import IFC file" type="file" accept=".ifc" style="display:none;">
-      <select id="drawing-kind" aria-label="Drawing export kind"><option value="plan">Plan</option><option value="section">Section</option><option value="elevation">Elevation</option><option value="sheet">Sheet</option></select>
-      <button id="export-drawing">Export Drawing</button>
-    </header>
+    <header><strong>KAMI BIM EDITOR</strong><span>Semantic building workspace</span><span class="spacer"></span><select id="profile" aria-label="Interaction profile">
+      <option value="revit">Revit</option>
+      <option value="archicad">Archicad</option>
+      <option value="vectorworks">Vectorworks</option>
+    </select><button id="undo">Undo</button><button id="redo">Redo</button><button id="save-project">Save</button><button id="load-project">Load</button><button id="import">Import</button><input id="import-file" type="file" accept=".edn,.kami-bim.edn" style="display:none;"><button id="export">Export Project</button><button id="export-ifc">Export IFC</button><button id="import-ifc">Import IFC</button><input id="import-ifc-file" type="file" accept=".ifc" style="display:none;"><select id="drawing-kind" aria-label="Drawing kind">
+      <option value="plan">Plan</option>
+      <option value="section">Section</option>
+      <option value="elevation">Elevation</option>
+      <option value="sheet">Sheet</option>
+    </select><select id="drawing-format" aria-label="Drawing format">
+      <option value="svg">SVG</option>
+      <option value="pdf">PDF</option>
+      <option value="dxf">DXF</option>
+    </select><button id="export-drawing">Export Drawing</button></header>
     <main>
       <aside>
         <h2>Elements</h2>
@@ -50,27 +42,29 @@ button { cursor: pointer; text-align: left; } :focus-visible { outline: 3px soli
         <button id="add-door">＋ Door in selected wall</button>
         <button id="add-window">＋ Window in selected wall</button>
         <h2>Families</h2>
-        <label>Definition<select id="family-definition"><option value="casework">Casework</option></select></label>
+        <label>Definition<select id="family-definition">
+          <option value="casework">Casework</option>
+        </select></label>
         <label>Type<select id="family-type"></select></label>
-        <label>Depth (m)<input id="family-depth" type="number" min="0.2" step="0.1" value="0.6"></label>
-        <label>Height (m)<input id="family-height" type="number" min="0.2" max="3" step="0.1" value="0.9"></label>
+        <label>Depth (m)<input id="family-depth" type="number" value="0.6"></label>
+        <label>Height (m)<input id="family-height" type="number" value="0.9"></label>
         <button class="primary" id="add-family-instance">＋ Family instance</button>
         <h2>Engineering</h2>
-        <label>Structural span (m)<input id="structural-span" type="number" min="0.1" step="0.1" value="6"></label>
-        <label>Axial load (kN)<input id="structural-load" type="number" step="1" value="100"></label>
+        <label>Structural span (m)<input id="structural-span" type="number" value="6"></label>
+        <label>Axial load (kN)<input id="structural-load" type="number" value="100"></label>
         <button id="analyze-structure">Analyze member</button>
         <label>Pipe start<input id="pipe-start" value="0,3,2.5"></label>
         <label>Pipe end<input id="pipe-end" value="8,3,2.5"></label>
-        <label>Pipe diameter (m)<input id="pipe-diameter" type="number" min="0.02" step="0.01" value="0.1"></label>
+        <label>Pipe diameter (m)<input id="pipe-diameter" type="number" value="0.1"></label>
         <button id="route-pipe">Route pipe</button>
         <div id="engineering-status">Ready</div>
         <h2>Rooms</h2>
-        <label>Width (m)<input id="room-width" type="number" min="0.1" step="0.1" value="4"></label>
-        <label>Depth (m)<input id="room-depth" type="number" min="0.1" step="0.1" value="3"></label>
+        <label>Width (m)<input id="room-width" type="number" value="4"></label>
+        <label>Depth (m)<input id="room-depth" type="number" value="3"></label>
         <button id="add-room">＋ Room</button>
         <div id="rooms"></div>
         <label>Room name<input id="room-name" value="Room"></label>
-        <label>Use<select id="room-category"><option value="residential">Residential</option><option value="office">Office</option><option value="circulation">Circulation</option><option value="service">Service</option><option value="mechanical-room">Mechanical room</option><option value="other">Other</option></select></label>
+        <label>Use<select id="room-category"><option value="residential">residential</option><option value="office">office</option><option value="circulation">circulation</option><option value="service">service</option><option value="mechanical-room">mechanical-room</option><option value="other">other</option></select></label>
         <button id="apply-room">Apply room properties</button>
         <button id="delete-room">Delete room</button>
         <h2>Levels</h2>
@@ -89,15 +83,15 @@ button { cursor: pointer; text-align: left; } :focus-visible { outline: 3px soli
       <section class="viewport">
         <canvas id="gpu-canvas" aria-label="BIM WebGPU viewport"></canvas>
         <div id="gpu-status">Initializing WebGPU…</div>
-        <div class="stats" id="stats">1 storey · 4 semantic walls</div>
+        <div class="stats" id="stats">Loading model…</div>
       </section>
       <aside>
-        <h2 id="inspector-title">Selected wall</h2>
-        <label>Name<input id="name" value="Exterior Wall"></label>
-        <label>Length (m)<input id="length" type="number" step="0.1" value="8.4"></label>
-        <label>Height (m)<input id="height" type="number" step="0.1" value="3.2"></label>
-        <label>Thickness (m)<input id="thickness" type="number" step="0.05" value="0.25"></label>
-        <label>Material<input id="material" value="Reinforced concrete"></label>
+        <h2 id="inspector-title">Selected element</h2>
+        <label>Name<input id="name"></label>
+        <label>Length (m)<input id="length" type="number" step="0.1"></label>
+        <label>Height (m)<input id="height" type="number" step="0.1"></label>
+        <label>Thickness (m)<input id="thickness" type="number" step="0.05"></label>
+        <label>Material<input id="material"></label>
         <button class="primary" id="apply">Apply properties</button>
         <button id="delete">Delete element</button>
       </aside>

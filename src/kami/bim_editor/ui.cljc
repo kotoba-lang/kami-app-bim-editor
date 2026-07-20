@@ -1,3 +1,68 @@
 (ns kami.bim-editor.ui (:require [html.core :as html] [css.core :as css]))
-(def sheet {:rules {"*" {:box-sizing :border-box} "body" {:margin 0 :height "100vh" :display :grid :grid-template-rows "52px 1fr" :font-family "Inter,system-ui" :background "#09101c" :color "#e7ecfa"} "header" {:padding "0 16px" :display :flex :align-items :center :gap 18 :background "#121c38"} "header .spacer" {:flex 1} "main" {:display :grid :grid-template-columns "240px 1fr 280px" :min-height 0} "aside" {:padding 16 :background "#111a34" :border-right "1px solid #2d3e68"} "aside:last-child" {:border-left "1px solid #2d3e68" :border-right 0} ".viewport" {:position :relative} "#gpu-canvas" {:width "100%" :height "100%" :display :block} "#gpu-status" {:position :absolute :left "50%" :top "45%" :transform "translate(-50%,-50%)" :color "#ffb0b0"} "button,input" {:width "100%" :margin "5px 0" :padding 8 :background "#20315b" :border "1px solid #526fa9" :border-radius 5 :color "#e7ecfa"} "button" {:cursor :pointer :text-align :left} ".primary" {:background "#7da2f3" :color "#071226" :font-weight 700} "h2" {:font-size 11 :text-transform :uppercase :letter-spacing ".1em" :color "#a7b9e0"} "label" {:display :grid :gap 4 :margin "9px 0"} ".stats" {:position :absolute :right 14 :bottom 14 :padding 8 :background "#08101dcc"} ".selected" {:border-color "#9fb9ff" :background "#314a82"}}})
-(defn page [] (html/html5 [:html {:lang "en"} [:head [:meta {:charset "utf-8"}] [:meta {:name "viewport" :content "width=device-width,initial-scale=1"}] [:link {:rel "icon" :href "data:,"}] [:title "Kami BIM Editor"] [:style (css/css sheet)]] [:body [:header [:strong "KAMI BIM EDITOR"] [:a {:href "https://kotoba-lang.github.io/kami-studio/"} "Studio"] [:span "Semantic building workspace"] [:span.spacer] [:select {:id "profile" :aria-label "Interaction profile"} [:option {:value "revit"} "Revit"] [:option {:value "archicad"} "Archicad"] [:option {:value "vectorworks"} "Vectorworks"]] [:button {:id "undo"} "Undo"] [:button {:id "redo"} "Redo"] [:button {:id "export"} "Export BIM EDN"] [:button {:id "export-ifc"} "Export IFC"] [:button {:id "import-ifc"} "Import IFC"] [:input {:id "import-ifc-file" :type "file" :accept ".ifc" :style {:display "none"}}] [:button {:id "export-drawing"} "Export Drawing"]] [:main [:aside [:h2 "Elements"] [:p {:id "profile-hint"} "WA Wall · DR Door · WN Window · LL Level · FL Floor"] [:button.primary {:id "add-wall"} "＋ Wall"] [:button {:id "add-slab"} "＋ Floor slab"] [:button {:id "add-door"} "＋ Door in selected wall"] [:button {:id "add-window"} "＋ Window in selected wall"] [:h2 "Levels"] [:button {:id "add-level"} "＋ Add level"] [:div {:id "levels"}] [:h2 "Model tree"] [:div {:id "tree"}]] [:section.viewport [:canvas {:id "gpu-canvas" :aria-label "BIM WebGPU viewport"}] [:div {:id "gpu-status"} "Initializing WebGPU…"] [:div.stats {:id "stats"} "1 storey · 4 semantic walls"]] [:aside [:h2 {:id "inspector-title"} "Selected wall"] [:label "Name" [:input {:id "name" :value "Exterior Wall"}]] [:label "Length (m)" [:input {:id "length" :type "number" :step 0.1 :value 8.4}]] [:label "Height (m)" [:input {:id "height" :type "number" :step 0.1 :value 3.2}]] [:label "Thickness (m)" [:input {:id "thickness" :type "number" :step 0.05 :value 0.25}]] [:label "Material" [:input {:id "material" :value "Reinforced concrete"}]] [:button.primary {:id "apply"} "Apply properties"] [:button {:id "delete"} "Delete element"]]] [:span {:id "debug-state" :style {:display "none"}}] [:script {:src "./js/app.js"}]]]))
+(def sheet {:rules {"*" {:box-sizing :border-box} "body" {:margin 0 :height "100vh" :display :grid :grid-template-rows "52px 1fr" :font-family "Inter,system-ui" :background "#09101c" :color "#e7ecfa"} "header" {:padding "0 16px" :display :flex :align-items :center :gap 8 :overflow-x :auto :background "#121c38"} "header .spacer" {:flex 1} "header button,header select" {:width :auto :white-space :nowrap} "main" {:display :grid :grid-template-columns "260px 1fr 300px" :min-height 0} "aside" {:padding 16 :overflow-y :auto :background "#111a34" :border-right "1px solid #2d3e68"} "aside:last-child" {:border-left "1px solid #2d3e68" :border-right 0} ".viewport" {:position :relative} "#gpu-canvas" {:width "100%" :height "100%" :display :block} "#gpu-status" {:position :absolute :left "50%" :top "45%" :transform "translate(-50%,-50%)" :color "#ffb0b0"} "button,input,select" {:width "100%" :margin "5px 0" :padding 8 :background "#20315b" :border "1px solid #526fa9" :border-radius 5 :color "#e7ecfa"} "button" {:cursor :pointer :text-align :left} ".primary" {:background "#7da2f3" :color "#071226" :font-weight 700} "h2" {:font-size 11 :margin-top 20 :text-transform :uppercase :letter-spacing ".1em" :color "#a7b9e0"} "label" {:display :grid :gap 4 :margin "9px 0"} ".stats" {:position :absolute :right 14 :bottom 14 :padding 8 :background "#08101dcc"} ".selected" {:border-color "#9fb9ff" :background "#314a82"}}})
+(defn page []
+  (html/html5
+   [:html {:lang "en"}
+    [:head [:meta {:charset "utf-8"}]
+     [:meta {:name "viewport" :content "width=device-width,initial-scale=1"}]
+     [:link {:rel "icon" :href "data:,"}] [:title "Kami BIM Editor"]
+     [:style (css/css sheet)]]
+    [:body
+     [:header [:strong "KAMI BIM EDITOR"] [:span "Semantic building workspace"] [:span.spacer]
+      [:select {:id "profile" :aria-label "Interaction profile"}
+       [:option {:value "revit"} "Revit"] [:option {:value "archicad"} "Archicad"]
+       [:option {:value "vectorworks"} "Vectorworks"]]
+      [:button {:id "undo"} "Undo"] [:button {:id "redo"} "Redo"]
+      [:button {:id "save-project"} "Save"] [:button {:id "load-project"} "Load"]
+      [:button {:id "import"} "Import"]
+      [:input {:id "import-file" :type "file" :accept ".edn,.kami-bim.edn" :style {:display "none"}}]
+      [:button {:id "export"} "Export Project"] [:button {:id "export-ifc"} "Export IFC"]
+      [:button {:id "import-ifc"} "Import IFC"]
+      [:input {:id "import-ifc-file" :type "file" :accept ".ifc" :style {:display "none"}}]
+      [:select {:id "drawing-kind" :aria-label "Drawing kind"}
+       [:option {:value "plan"} "Plan"] [:option {:value "section"} "Section"]
+       [:option {:value "elevation"} "Elevation"] [:option {:value "sheet"} "Sheet"]]
+      [:select {:id "drawing-format" :aria-label "Drawing format"}
+       [:option {:value "svg"} "SVG"] [:option {:value "pdf"} "PDF"]
+       [:option {:value "dxf"} "DXF"]]
+      [:button {:id "export-drawing"} "Export Drawing"]]
+     [:main
+      [:aside
+       [:h2 "Elements"] [:p {:id "profile-hint"} "WA Wall · DR Door · WN Window · LL Level · FL Floor"]
+       [:button.primary {:id "add-wall"} "＋ Wall"] [:button {:id "add-slab"} "＋ Floor slab"]
+       [:button {:id "add-door"} "＋ Door in selected wall"] [:button {:id "add-window"} "＋ Window in selected wall"]
+       [:h2 "Families"] [:label "Definition" [:select {:id "family-definition"} [:option {:value "casework"} "Casework"]]]
+       [:label "Type" [:select {:id "family-type"}]]
+       [:label "Depth (m)" [:input {:id "family-depth" :type "number" :value 0.6}]]
+       [:label "Height (m)" [:input {:id "family-height" :type "number" :value 0.9}]]
+       [:button.primary {:id "add-family-instance"} "＋ Family instance"]
+       [:h2 "Engineering"]
+       [:label "Structural span (m)" [:input {:id "structural-span" :type "number" :value 6}]]
+       [:label "Axial load (kN)" [:input {:id "structural-load" :type "number" :value 100}]]
+       [:button {:id "analyze-structure"} "Analyze member"]
+       [:label "Pipe start" [:input {:id "pipe-start" :value "0,3,2.5"}]]
+       [:label "Pipe end" [:input {:id "pipe-end" :value "8,3,2.5"}]]
+       [:label "Pipe diameter (m)" [:input {:id "pipe-diameter" :type "number" :value 0.1}]]
+       [:button {:id "route-pipe"} "Route pipe"] [:div {:id "engineering-status"} "Ready"]
+       [:h2 "Rooms"] [:label "Width (m)" [:input {:id "room-width" :type "number" :value 4}]]
+       [:label "Depth (m)" [:input {:id "room-depth" :type "number" :value 3}]]
+       [:button {:id "add-room"} "＋ Room"] [:div {:id "rooms"}]
+       [:label "Room name" [:input {:id "room-name" :value "Room"}]]
+       [:label "Use" [:select {:id "room-category"}
+                       (for [value ["residential" "office" "circulation" "service" "mechanical-room" "other"]]
+                         [:option {:value value} value])]]
+       [:button {:id "apply-room"} "Apply room properties"] [:button {:id "delete-room"} "Delete room"]
+       [:h2 "Levels"] [:button {:id "add-level"} "＋ Add level"] [:div {:id "levels"}]
+       [:h2 "Model tree"] [:div {:id "tree"}]
+       [:h2 "Quantity schedule"] [:button {:id "export-schedule"} "Export CSV"] [:div {:id "quantity-schedule"}]
+       [:h2 "Clash Detection"] [:button.primary {:id "run-clashes"} "Run Clash Check"]
+       [:button {:id "export-clashes"} "Export Clash CSV"] [:div {:id "clash-results"} "No clashes"]]
+      [:section.viewport [:canvas {:id "gpu-canvas" :aria-label "BIM WebGPU viewport"}]
+       [:div {:id "gpu-status"} "Initializing WebGPU…"] [:div.stats {:id "stats"} "Loading model…"]]
+      [:aside [:h2 {:id "inspector-title"} "Selected element"]
+       [:label "Name" [:input {:id "name"}]] [:label "Length (m)" [:input {:id "length" :type "number" :step 0.1}]]
+       [:label "Height (m)" [:input {:id "height" :type "number" :step 0.1}]]
+       [:label "Thickness (m)" [:input {:id "thickness" :type "number" :step 0.05}]]
+       [:label "Material" [:input {:id "material"}]] [:button.primary {:id "apply"} "Apply properties"]
+       [:button {:id "delete"} "Delete element"]]]
+     [:span {:id "debug-state" :style {:display "none"}}] [:script {:src "./js/app.js"}]]]))

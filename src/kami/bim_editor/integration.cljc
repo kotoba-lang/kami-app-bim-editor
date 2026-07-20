@@ -1,6 +1,7 @@
 (ns kami.bim-editor.integration
   "Application boundary for publishing one coordinated design revision."
-  (:require [bim.integration :as bim-integration]))
+  (:require [bim.integration :as bim-integration]
+            [bim.interchange :as interchange]))
 
 (defn coordinated-revision
   [{:keys [project project-id project-name revision events]}]
@@ -25,3 +26,16 @@
 
 (defn import-ifc-spf [text]
   (bim-integration/import-ifc-spf text))
+
+(defn export-drawing
+  "Export an active floor plan or the full storey set through shared formats."
+  [project active-storey-id format]
+  (let [storeys (mapcat :storeys (mapcat :buildings (:sites project)))
+        storey (first (filter #(= active-storey-id (:id %)) storeys))]
+    (case format
+      :dxf {:filename (str "floor-plan-" active-storey-id ".dxf")
+            :media-type "application/dxf"
+            :content (interchange/floor-plan-dxf storey)}
+      :pdf {:filename "building-drawing-set.pdf" :media-type "application/pdf"
+            :content (interchange/drawing-set-pdf (vec storeys))}
+      (throw (ex-info "unsupported BIM drawing export format" {:format format})))))
