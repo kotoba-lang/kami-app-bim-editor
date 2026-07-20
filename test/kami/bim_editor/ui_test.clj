@@ -8,6 +8,7 @@
     (doseq [id ["add-wall" "add-family-instance" "analyze-structure" "route-pipe"
                 "move-element" "copy-element" "move-x" "move-y" "move-z"
                 "snap-enabled" "snap-grid" "snap-tolerance" "snap-status"
+                "viewport-tool" "drag-measure" "snap-marker"
                 "rotate-element" "mirror-element" "array-element" "transform-angle"
                 "pivot-x" "pivot-y" "pivot-z" "mirror-x" "mirror-y" "mirror-z"
                 "array-kind" "array-count"

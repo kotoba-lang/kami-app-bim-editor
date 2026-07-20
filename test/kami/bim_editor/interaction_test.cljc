@@ -42,3 +42,31 @@
     (is (= [0.55 0.7 0.95] (:color (first items))))
     (is (= [1.0 0.58 0.12] (:color (second items))))
     (is (every? #(seq (get-in % [:mesh :indices])) items))))
+
+(deftest ray-plane-drag-produces-world-space-deltas
+  (let [plane {:plane/origin [0.0 0.0 2.0] :plane/normal [0.0 0.0 1.0]}
+        start {:ray/origin [1.0 2.0 10.0] :ray/direction [0.0 0.0 -1.0]}
+        current {:ray/origin [4.0 6.0 10.0] :ray/direction [0.0 0.0 -1.0]}
+        drag (interaction/drag-delta start current plane)]
+    (is (= [1.0 2.0 2.0] (:drag/start drag)))
+    (is (= [4.0 6.0 2.0] (:drag/current drag)))
+    (is (= [3.0 4.0 0.0] (:drag/delta drag)))
+    (is (nil? (interaction/ray-plane-point
+               {:ray/origin [0 0 1] :ray/direction [1 0 0]} plane)))
+    (is (nil? (interaction/ray-plane-point
+               {:ray/origin [0 0 0] :ray/direction [0 0 -1]} plane)))))
+
+(deftest drag-preview-commits-once-and-cancels-exactly
+  (let [original {:elements [{:id 1 :x 0}]}
+        preview {:elements [{:id 1 :x 4}]}
+        state {:project preview :history [{:older true}] :future [{:redo true}]
+               :revision 7 :save-status :clean :last-snap {:snap/kind :grid}}
+        committed (interaction/commit-drag-state state original)
+        cancelled (interaction/cancel-drag-state state original)]
+    (is (= preview (:project committed)))
+    (is (= [{:older true} original] (:history committed)))
+    (is (= [] (:future committed)))
+    (is (= 8 (:revision committed)))
+    (is (= :dirty (:save-status committed)))
+    (is (= original (:project cancelled)))
+    (is (nil? (:last-snap cancelled)))))
