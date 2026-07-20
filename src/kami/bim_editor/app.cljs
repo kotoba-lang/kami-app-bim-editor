@@ -345,7 +345,8 @@
                       "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
                       "wj" "join-walls" "wl" "apply-wall-layers"
-                      "sl" "apply-slab-layers" "so" "add-shaft-opening"})
+                      "sl" "apply-slab-layers" "se" "apply-slab-shape"
+                      "so" "add-shaft-opening"})
 (def profile-shortcuts
   {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level"
               "f" "add-slab" "m" "move-element" "c" "copy-element"
@@ -825,6 +826,20 @@
                            (when (seq slabs)
                              (transform-project (:project @state) slabs
                                                 bim/set-slab-layers layers)))))))
+ (.addEventListener (.getElementById js/document "apply-slab-shape") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Slab shape applied"
+                       (fn []
+                         (let [slabs (filterv #(= :slab (:kind %)) (selected-elements))
+                               elevations (mapv #(js/parseFloat (string/trim %))
+                                                (string/split
+                                                 (.-value (.getElementById js/document
+                                                                           "slab-elevations"))
+                                                 #","))]
+                           (when (seq slabs)
+                             (transform-project (:project @state) slabs
+                                                bim/set-slab-vertex-elevations elevations)))))))
  (.addEventListener (.getElementById js/document "add-shaft-opening") "click"
                     (fn [_]
                       (authoring-commit!
