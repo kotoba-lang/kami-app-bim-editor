@@ -1,4 +1,7 @@
-(ns kami.bim-editor.app (:require [cljs.reader :as reader] [clojure.string :as string] [bim] [kami.bim-editor.project :as project] [kami.webgpu.mesh :as gpu]))
+(ns kami.bim-editor.app (:require [cljs.reader :as reader] [clojure.string :as string] [bim]
+                                  [bim.drawing :as drawing] [ifc.core :as ifc]
+                                  [kami.bim-editor.integration :as integration]
+                                  [kami.bim-editor.project :as project] [kami.webgpu.mesh :as gpu]))
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
@@ -170,8 +173,28 @@
     (try (apply-project! (reader/read-string data))
          (catch :default _ (when-let [backup (.getItem js/localStorage backup-key)] (apply-project! (reader/read-string backup)))))))
 (defn- download-project! []
-  (let [a (.createElement js/document "a") url (.createObjectURL js/URL (js/Blob. #js [(pr-str (project-document))] #js {:type "application/edn"}))]
-    (set! (.-href a) url) (set! (.-download a) "building.kami-bim.edn") (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
+  (let [bundle (integration/coordinated-revision
+                {:project (:project @state) :project-id (:project-id @state)
+                 :project-name (:project-name @state) :revision (:revision @state) :events []})
+        a (.createElement js/document "a")
+        url (.createObjectURL js/URL (js/Blob. #js [(pr-str bundle)] #js {:type "application/edn"}))]
+    (set! (.-href a) url) (set! (.-download a) "building.coordinated-bim.edn")
+    (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
+(defn- download-text! [filename mime value]
+  (let [a (.createElement js/document "a")
+        url (.createObjectURL js/URL (js/Blob. #js [value] #js {:type mime}))]
+    (set! (.-href a) url) (set! (.-download a) filename)
+    (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
+(defn- download-ifc! []
+  (download-text! "building.ifc" "application/x-step"
+                  (ifc/write-spf (integration/coordinated-ifc (:project @state)))))
+(defn- download-drawing! []
+  (when-let [storey (bim/find-storey (:project @state) (:active-storey @state))]
+    (download-text! (str "floor-plan-" (:id storey) ".svg") "image/svg+xml"
+                    (drawing/floor-plan-svg storey))))
+(defn- import-ifc! [event]
+  (when-let [file (aget (.. event -target -files) 0)]
+    (-> (.text file) (.then #(apply-project! (ifc/read-spf %))))))
 (defn- import-project! [event]
   (when-let [file (aget (.. event -target -files) 0)] (-> (.text file) (.then #(apply-project! (reader/read-string %))))))
 (defn- invoke-shortcut! [event]
@@ -274,4 +297,8 @@
  (.addEventListener (.getElementById js/document "export-schedule") "click" download-schedule!)
  (.addEventListener (.getElementById js/document "run-clashes") "click" refresh!)
  (.addEventListener (.getElementById js/document "export-clashes") "click" download-clashes!)
+ (.addEventListener (.getElementById js/document "export-ifc") "click" download-ifc!)
+ (.addEventListener (.getElementById js/document "export-drawing") "click" download-drawing!)
+ (.addEventListener (.getElementById js/document "import-ifc") "click" #(.click (.getElementById js/document "import-ifc-file")))
+ (.addEventListener (.getElementById js/document "import-ifc-file") "change" import-ifc!)
  (.addEventListener (.getElementById js/document "export") "click" download-project!)))

@@ -1,0 +1,24 @@
+(ns kami.bim-editor.integration
+  "Application boundary for publishing one coordinated design revision."
+  (:require [bim.integration :as bim-integration]))
+
+(defn coordinated-revision
+  [{:keys [project project-id project-name revision events]}]
+  {:kami/document :coordinated-bim-revision
+   :kami/version 1
+   :project/id project-id
+   :project/name project-name
+   :project/revision revision
+   :project/model project
+   :project/federation (bim-integration/federated-design
+                        {:architectural project :structural [] :mep []})
+   :project/drawings (bim-integration/generate-drawing-set project)
+   :project/ifc (bim-integration/export-ifc project)
+   :project/collaboration {:events (vec events)}
+   :project/cloud-itonami (bim-integration/cloud-itonami-payload project revision)})
+
+(defn apply-remote-events [project events]
+  (bim-integration/merge-events project events))
+
+(defn coordinated-ifc [project]
+  (bim-integration/export-ifc project))
