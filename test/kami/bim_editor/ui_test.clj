@@ -21,6 +21,8 @@
                 "align-elements" "wall-offset" "offset-walls" "trim-walls"
                 "wall-join-style" "wall-join-priority" "join-walls"
                 "wall-layers" "apply-wall-layers" "authoring-status"
+                "slab-layers" "apply-slab-layers" "shaft-x" "shaft-y"
+                "shaft-width" "shaft-depth" "add-shaft-opening"
                 "add-room" "quantity-schedule" "clash-results" "drawing-kind"
                 "drawing-format" "export-drawing" "import-ifc-file"]]
       (is (string/includes? page (str "id=\"" id "\""))))

@@ -144,6 +144,15 @@
         [:input {:id "wall-layers" :type "text"
                  :value "Gypsum:0.013:gypsum,Insulation:0.09:insulation,Concrete:0.20:concrete"}]]
        [:button {:id "apply-wall-layers"} "Apply wall layers (WL)"]
+       [:label "Slab layers (material:thickness:category)"
+        [:input {:id "slab-layers" :type "text"
+                 :value "Finish:0.02:finish,Concrete:0.20:concrete"}]]
+       [:button {:id "apply-slab-layers"} "Apply slab layers (SL)"]
+       [:label "Shaft X (m)" [:input {:id "shaft-x" :type "number" :step 0.1 :value 3}]]
+       [:label "Shaft Y (m)" [:input {:id "shaft-y" :type "number" :step 0.1 :value 2}]]
+       [:label "Shaft width (m)" [:input {:id "shaft-width" :type "number" :min 0.1 :step 0.1 :value 1}]]
+       [:label "Shaft depth (m)" [:input {:id "shaft-depth" :type "number" :min 0.1 :step 0.1 :value 1}]]
+       [:button {:id "add-shaft-opening"} "Add shaft opening (SO)"]
        [:div {:id "authoring-status"} "Modify ready"]
        [:button {:id "delete"} "Delete element"]]]
      [:span {:id "debug-state" :style {:display "none"}}] [:script {:src "./js/app.js"}]]]))
