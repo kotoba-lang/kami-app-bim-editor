@@ -16,6 +16,8 @@
                 "family-status" "analyze-structure" "route-pipe"
                 "structural-role" "structural-width" "structural-depth"
                 "assign-structural-role" "generate-structural-model" "structural-model-status"
+                "structural-area-load" "structural-wind-pressure"
+                "structural-seismic-coefficient" "generate-structural-loads"
                 "move-element" "copy-element" "move-x" "move-y" "move-z"
                 "snap-enabled" "snap-grid" "snap-tolerance" "snap-status"
                 "viewport-tool" "drag-measure" "snap-marker" "selection-box"
