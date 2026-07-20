@@ -2,6 +2,7 @@
                                   [bim.integration :as family]
                                   [bim.drawing :as drawing] [ifc.core :as ifc]
                                   [kami.bim-editor.integration :as integration]
+                                  [kami.bim-editor.interaction :as interaction]
                                   [kami.bim-editor.project :as project] [kami.webgpu.mesh :as gpu]))
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
@@ -28,6 +29,7 @@
                       :selected-space nil :next-space-id 1000
                       :selected-clash nil :family-catalog (initial-family-catalog)
                       :history [] :future [] :azimuth 0.75 :elevation 0.5
+                      :camera-target [4.0 1.5 3.0] :camera-distance 14.0
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
                       :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
@@ -167,7 +169,41 @@
         (set! (.-value (.getElementById js/document "height")) (get-in e [:geometry :profile :height]))
         (set! (.-value (.getElementById js/document "thickness")) (get-in e [:geometry :profile :thickness]))))))
 (defn- commit! [p] (swap! state (fn [s] (-> s (update :history conj (:project s)) (assoc :project p :future [] :save-status :dirty) (update :revision inc)))) (refresh!))
-(defn- draw! [] (when-let [{:keys [buffers] :as v} @viewport] (when buffers (let [{:keys [azimuth elevation]} @state d 14 eye [(+ 4 (* d (js/Math.cos elevation) (js/Math.cos azimuth))) (+ 3 (* d (js/Math.sin elevation))) (+ 3 (* d (js/Math.cos elevation) (js/Math.sin azimuth)))]] (gpu/render-frame! v buffers eye [4 1.5 3] [0.55 0.7 0.95])))) (js/requestAnimationFrame draw!))
+(defn- camera-state []
+  (let [{:keys [azimuth elevation camera-target camera-distance]} @state
+        [tx ty tz] camera-target d camera-distance]
+    {:eye [(+ tx (* d (js/Math.cos elevation) (js/Math.cos azimuth)))
+           (+ ty (* d (js/Math.sin elevation)))
+           (+ tz (* d (js/Math.cos elevation) (js/Math.sin azimuth)))]
+     :target camera-target}))
+(defn- draw! []
+  (when-let [{:keys [buffers] :as v} @viewport]
+    (when buffers
+      (let [{:keys [eye target]} (camera-state)]
+        (gpu/render-frame! v buffers eye target [0.55 0.7 0.95]))))
+  (js/requestAnimationFrame draw!))
+(defn- element-storey-id [element-id]
+  (some (fn [storey]
+          (when (some #(= element-id (:id %)) (:elements storey)) (:id storey)))
+        (storeys)))
+(defn- pick-at! [canvas client-x client-y]
+  (let [rect (.getBoundingClientRect canvas)
+        x (- (* 2.0 (/ (- client-x (.-left rect)) (.-width rect))) 1.0)
+        y (- 1.0 (* 2.0 (/ (- client-y (.-top rect)) (.-height rect))))
+        {:keys [eye target]} (camera-state)
+        ray (interaction/camera-ray {:eye eye :target target
+                                     :aspect (/ (.-width rect) (max 1.0 (.-height rect)))} x y)]
+    (if-let [hit (interaction/pick-element (all-elements) ray)]
+      (let [element-id (:element/id hit)]
+        (swap! state assoc :selected element-id :active-storey (element-storey-id element-id))
+        (refresh!))
+      (do (swap! state assoc :selected nil) (refresh!)))))
+(defn- frame-selected! []
+  (when-let [bounds (some-> (selected) interaction/element-bounds)]
+    (let [frame (interaction/frame-bounds bounds)]
+      (swap! state assoc :camera-target (:camera/target frame)
+             :camera-distance (:camera/distance frame))
+      (refresh!))))
 (defn- num [id] (js/parseFloat (.-value (.getElementById js/document id))))
 (defn- parse-point [id]
   (mapv #(js/parseFloat (.trim %))
@@ -225,11 +261,14 @@
 (def ^:private storage-key "kami.bim-editor.project.v2")
 (def ^:private backup-key "kami.bim-editor.project.backup")
 (defn- project-document []
-  (let [{:keys [project-id project-name project active-storey selected azimuth elevation profile]} @state]
+  (let [{:keys [project-id project-name project active-storey selected azimuth elevation
+                camera-target camera-distance profile]} @state]
     (project/document {:id project-id :name project-name :building-model project
                        :family-catalog (:family-catalog @state)
                        :editor {:active-storey active-storey :selected selected}
-                       :camera {:azimuth azimuth :elevation elevation} :interaction {:profile profile}})))
+                       :camera {:azimuth azimuth :elevation elevation :target camera-target
+                                :distance camera-distance}
+                       :interaction {:profile profile}})))
 (defn- save-project! []
   (let [data (pr-str (project-document)) old (.getItem js/localStorage storage-key)]
     (when old (.setItem js/localStorage backup-key old)) (.setItem js/localStorage storage-key data)
@@ -242,7 +281,10 @@
         storey-ids (map :id (mapcat :storeys (mapcat :buildings (:sites model))))]
     (swap! state assoc :project-id (:project/id p) :project-name (:project/name p) :project model
            :active-storey (:active-storey editor) :selected (:selected editor) :azimuth (:azimuth camera)
-           :elevation (:elevation camera) :profile (:profile interaction) :next-id (inc (reduce max 13 element-ids))
+           :elevation (:elevation camera)
+           :camera-target (or (:target camera) [4.0 1.5 3.0])
+           :camera-distance (or (:distance camera) 14.0)
+           :profile (:profile interaction) :next-id (inc (reduce max 13 element-ids))
            :next-storey-id (inc (reduce max 3 storey-ids)) :next-space-id (inc (reduce max 999 space-ids))
            :family-catalog (if (seq (:project/family-catalog p))
                              (:project/family-catalog p) (initial-family-catalog))
@@ -423,7 +465,28 @@
                          (refresh!))))
  (.addEventListener (.getElementById js/document "undo") "click" #(when-let [p (peek (:history @state))] (swap! state (fn [s] (assoc s :project p :history (pop (:history s)) :future (conj (:future s) (:project s))))) (refresh!)))
  (.addEventListener (.getElementById js/document "redo") "click" (fn [] (when-let [p (peek (:future @state))] (swap! state (fn [s] (assoc s :project p :future (pop (:future s)) :history (conj (:history s) (:project s))))) (refresh!))))
- (.addEventListener canvas "pointerdown" #(reset! drag [(.-clientX %) (.-clientY %)])) (.addEventListener js/window "pointerup" #(reset! drag nil)) (.addEventListener js/window "pointermove" (fn [e] (when-let [[x y] @drag] (swap! state update :azimuth + (* 0.008 (- (.-clientX e) x))) (swap! state update :elevation (fn [v] (max -1.2 (min 1.2 (+ v (* 0.008 (- (.-clientY e) y))))))) (reset! drag [(.-clientX e) (.-clientY e)]))))
+ (.addEventListener canvas "pointerdown"
+                    #(reset! drag {:start [(.-clientX %) (.-clientY %)]
+                                   :last [(.-clientX %) (.-clientY %)] :moved? false}))
+ (.addEventListener js/window "pointerup"
+                    (fn [_]
+                      (when-let [{:keys [start moved?]} @drag]
+                        (when-not moved? (pick-at! canvas (first start) (second start))))
+                      (reset! drag nil)))
+ (.addEventListener canvas "dblclick" (fn [event] (.preventDefault event) (frame-selected!)))
+ (.addEventListener js/window "pointermove"
+                    (fn [e]
+                      (when-let [{[x y] :last [start-x start-y] :start
+                                  already-moved? :moved?} @drag]
+                        (let [client-x (.-clientX e) client-y (.-clientY e)
+                              moved? (> (js/Math.hypot (- client-x start-x)
+                                                       (- client-y start-y)) 3.0)]
+                          (swap! state update :azimuth + (* 0.008 (- client-x x)))
+                          (swap! state update :elevation
+                                 (fn [v] (max -1.2 (min 1.2
+                                                       (+ v (* 0.008 (- client-y y)))))))
+                          (swap! drag assoc :last [client-x client-y]
+                                 :moved? (or already-moved? moved?))))))
  (.addEventListener (.getElementById js/document "save-project") "click" save-project!)
  (.addEventListener (.getElementById js/document "load-project") "click" load-project!)
  (.addEventListener (.getElementById js/document "import") "click" #(.click (.getElementById js/document "import-file")))
