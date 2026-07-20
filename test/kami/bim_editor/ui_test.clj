@@ -14,7 +14,8 @@
                 "array-kind" "array-count"
                 "align-axis" "align-reference-anchor" "align-moving-anchor"
                 "align-elements" "wall-offset" "offset-walls" "trim-walls"
-                "join-walls" "wall-layers" "apply-wall-layers" "authoring-status"
+                "wall-join-style" "wall-join-priority" "join-walls"
+                "wall-layers" "apply-wall-layers" "authoring-status"
                 "add-room" "quantity-schedule" "clash-results" "drawing-kind"
                 "drawing-format" "export-drawing" "import-ifc-file"]]
       (is (string/includes? page (str "id=\"" id "\""))))
