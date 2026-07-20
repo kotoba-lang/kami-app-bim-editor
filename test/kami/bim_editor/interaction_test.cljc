@@ -31,3 +31,14 @@
                 {:ray/origin [0.0 3.0 0.0] :ray/direction [0.0 -1.0 0.0]} box)))
     (is (nil? (interaction/ray-box-distance
                {:ray/origin [2.0 3.0 0.0] :ray/direction [0.0 -1.0 0.0]} box)))))
+
+(deftest render-items-highlight-only-the-selected-element
+  (let [wall-a (bim/wall {:id 10 :start [0 0 0] :end [2 0 0]
+                          :thickness 0.2 :height 3.0})
+        wall-b (bim/wall {:id 11 :start [0 2 0] :end [2 2 0]
+                          :thickness 0.2 :height 3.0})
+        items (interaction/element-render-items [wall-a {:id 99 :kind :unknown} wall-b] 11)]
+    (is (= [10 11] (mapv :element/id items)))
+    (is (= [0.55 0.7 0.95] (:color (first items))))
+    (is (= [1.0 0.58 0.12] (:color (second items))))
+    (is (every? #(seq (get-in % [:mesh :indices])) items))))
