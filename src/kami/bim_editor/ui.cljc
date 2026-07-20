@@ -157,6 +157,9 @@
        [:label "Shaft width (m)" [:input {:id "shaft-width" :type "number" :min 0.1 :step 0.1 :value 1}]]
        [:label "Shaft depth (m)" [:input {:id "shaft-depth" :type "number" :min 0.1 :step 0.1 :value 1}]]
        [:button {:id "add-shaft-opening"} "Add shaft opening (SO)"]
+       [:label "Hosted offset (m)" [:input {:id "host-offset" :type "number" :min 0 :step 0.1 :value 1}]]
+       [:label "Hosted sill (m)" [:input {:id "host-sill" :type "number" :min 0 :step 0.1 :value 0}]]
+       [:button {:id "rehost-element"} "Rehost door/window (RH)"]
        [:div {:id "authoring-status"} "Modify ready"]
        [:button {:id "delete"} "Delete element"]]]
      [:span {:id "debug-state" :style {:display "none"}}] [:script {:src "./js/app.js"}]]]))
