@@ -48,6 +48,12 @@ button { cursor: pointer; text-align: left; } :focus-visible { outline: 3px soli
         <button id="add-slab">＋ Floor slab</button>
         <button id="add-door">＋ Door in selected wall</button>
         <button id="add-window">＋ Window in selected wall</button>
+        <h2>Families</h2>
+        <label>Definition<select id="family-definition"><option value="casework">Casework</option></select></label>
+        <label>Type<select id="family-type"></select></label>
+        <label>Depth (m)<input id="family-depth" type="number" min="0.2" step="0.1" value="0.6"></label>
+        <label>Height (m)<input id="family-height" type="number" min="0.2" max="3" step="0.1" value="0.9"></label>
+        <button class="primary" id="add-family-instance">＋ Family instance</button>
         <h2>Rooms</h2>
         <label>Width (m)<input id="room-width" type="number" min="0.1" step="0.1" value="4"></label>
         <label>Depth (m)<input id="room-depth" type="number" min="0.1" step="0.1" value="3"></label>
