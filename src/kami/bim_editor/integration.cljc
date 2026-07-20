@@ -29,13 +29,20 @@
 
 (defn export-drawing
   "Export an active floor plan or the full storey set through shared formats."
-  [project active-storey-id format]
-  (let [storeys (mapcat :storeys (mapcat :buildings (:sites project)))
-        storey (first (filter #(= active-storey-id (:id %)) storeys))]
-    (case format
-      :dxf {:filename (str "floor-plan-" active-storey-id ".dxf")
-            :media-type "application/dxf"
-            :content (interchange/floor-plan-dxf storey)}
-      :pdf {:filename "building-drawing-set.pdf" :media-type "application/pdf"
-            :content (interchange/drawing-set-pdf (vec storeys))}
-      (throw (ex-info "unsupported BIM drawing export format" {:format format})))))
+  ([project active-storey-id format]
+   (export-drawing project active-storey-id format {}))
+  ([project active-storey-id format drawing-views]
+   (let [storeys (mapcat :storeys (mapcat :buildings (:sites project)))
+         storey (first (filter #(= active-storey-id (:id %)) storeys))
+         annotations-by-storey
+         (into {} (map (fn [[storey-id view]] [storey-id (:view/annotations view)]))
+               drawing-views)]
+     (case format
+       :dxf {:filename (str "floor-plan-" active-storey-id ".dxf")
+             :media-type "application/dxf"
+             :content (interchange/floor-plan-dxf
+                       storey {:annotations (get annotations-by-storey active-storey-id)})}
+       :pdf {:filename "building-drawing-set.pdf" :media-type "application/pdf"
+             :content (interchange/drawing-set-pdf
+                       (vec storeys) {:annotations-by-storey annotations-by-storey})}
+       (throw (ex-info "unsupported BIM drawing export format" {:format format}))))))

@@ -222,7 +222,20 @@
         (set! (.-value (.getElementById js/document "length")) (get-in e [:quantities :length-m]))
         (set! (.-value (.getElementById js/document "height")) (get-in e [:geometry :profile :height]))
         (set! (.-value (.getElementById js/document "thickness")) (get-in e [:geometry :profile :thickness]))))))
-(defn- commit! [p] (swap! state (fn [s] (-> s (update :history conj (:project s)) (assoc :project p :future [] :save-status :dirty) (update :revision inc)))) (refresh!))
+(defn- reassociate-drawing-views [views project]
+  (into {} (map (fn [[storey-id view]]
+                  [storey-id
+                   (family/reassociate-view-annotations
+                    view (:elements (bim/find-storey project storey-id)))])
+                views)))
+(defn- commit! [p]
+  (swap! state
+         (fn [s]
+           (-> s (update :history conj (:project s))
+               (assoc :project p :future [] :save-status :dirty
+                      :drawing-views (reassociate-drawing-views (:drawing-views s) p))
+               (update :revision inc))))
+  (refresh!))
 (defn- authoring-commit! [label operation]
   (try
     (if-let [project (operation)]
@@ -571,10 +584,12 @@
            (drawing/documented-floor-plan-svg storey {:annotations annotations})])]
     (case format
       :dxf (let [{:keys [filename media-type content]}
-                 (integration/export-drawing model (:active-storey @state) :dxf)]
+                 (integration/export-drawing model (:active-storey @state) :dxf
+                                             (:drawing-views @state))]
              (download-text! filename media-type content))
       :pdf (let [{:keys [filename media-type content]}
-                 (integration/export-drawing model (:active-storey @state) :pdf)]
+                 (integration/export-drawing model (:active-storey @state) :pdf
+                                             (:drawing-views @state))]
              (download-bytes! filename media-type content))
       (when content (download-text! filename "image/svg+xml" content)))))
 (defn- import-ifc! [event]
