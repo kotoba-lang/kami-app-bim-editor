@@ -19,6 +19,7 @@
                 "mep-network-terminal-a" "mep-network-terminal-b"
                 "mep-network-demand-a" "mep-network-demand-b"
                 "mep-network-max-velocity" "design-mep-network"
+                "duct-start" "duct-end" "duct-flow" "duct-max-velocity" "route-duct"
                 "structural-role" "structural-width" "structural-depth"
                 "assign-structural-role" "generate-structural-model" "structural-model-status"
                 "structural-area-load" "structural-wind-pressure"
