@@ -1,23 +1,28 @@
 (ns kami.bim-editor.project)
-(def current-version 5)
-(defn document [{:keys [id name building-model family-catalog drawings print-setting
+(def current-version 6)
+(defn document [{:keys [id name building-model family-catalog drawings drawing-set print-setting
                         editor camera interaction]}]
   {:kami/document :bim-editor-project :kami/version current-version
    :project/id (or id "untitled-bim") :project/name (or name "Untitled BIM")
    :project/building-model building-model :project/family-catalog (or family-catalog {})
    :project/drawings (or drawings {})
+   :project/drawing-set (or drawing-set {})
    :project/print-setting (or print-setting {})
    :project/editor editor :project/camera camera :project/interaction interaction})
 (defn migrate [v]
   (cond
     (= :bim-editor-project (:kami/document v))
-    (case (:kami/version v) 5 v
-      4 (assoc v :kami/version 5 :project/print-setting {})
-      3 (assoc v :kami/version 5 :project/drawings {} :project/print-setting {})
-      2 (-> v (assoc :kami/version 5 :project/family-catalog {} :project/drawings {}
+    (case (:kami/version v) 6 v
+      5 (assoc v :kami/version 6 :project/drawing-set {})
+      4 (assoc v :kami/version 6 :project/print-setting {} :project/drawing-set {})
+      3 (assoc v :kami/version 6 :project/drawings {} :project/print-setting {}
+               :project/drawing-set {})
+      2 (-> v (assoc :kami/version 6 :project/family-catalog {} :project/drawings {}
+                     :project/drawing-set {}
                      :project/print-setting {}))
-      1 (-> v (assoc :kami/version 5 :project/interaction {:profile :revit}
+      1 (-> v (assoc :kami/version 6 :project/interaction {:profile :revit}
                      :project/family-catalog {} :project/drawings {}
+                     :project/drawing-set {}
                      :project/print-setting {})
             (dissoc :project/version))
       (throw (ex-info "Unsupported BIM project version" {:version (:kami/version v)})))
@@ -33,6 +38,7 @@
          (every? #(and (some? (:id %)) (vector? (:elements %))) storeys)
          (map? (:project/family-catalog p))
          (map? (:project/drawings p))
+         (map? (:project/drawing-set p))
          (map? (:project/print-setting p))
          (map? (:project/editor p)) (map? (:project/camera p)) (map? (:project/interaction p)))))
 (defn open [v] (let [p (migrate v)] (when-not (valid? p) (throw (ex-info "Invalid BIM Editor project" {:project p}))) p))

@@ -214,6 +214,13 @@ button { cursor: pointer; text-align: left; }</style></head>
         </select></label>
         <button id="apply-print-setting">Apply print setup</button>
         <div id="print-status">Print ready</div>
+        <h2>Drawing sheets</h2>
+        <label>Organization<input id="title-block-organization" value="Kotoba Architects"></label>
+        <label>Client<input id="title-block-client" value="Client"></label>
+        <label>Drawn by<input id="title-block-drawn-by" value="Designer"></label>
+        <label>Checked by<input id="title-block-checked-by" value="Checker"></label>
+        <button class="primary" id="generate-drawing-set">Generate plans, sections + sheet</button>
+        <div id="drawing-set-status">No drawing set</div>
         <h2>Clash Detection</h2>
         <button class="primary" id="run-clashes">Run Clash Check</button>
         <button id="export-clashes">Export Clash CSV</button>
