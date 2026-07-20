@@ -113,8 +113,12 @@
     (set! (.-href a) url) (set! (.-download a) "bim-clashes.csv") (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
 (defn- refresh! []
   (when-let [v @viewport]
-    (let [m (mesh)]
-      (swap! viewport assoc :buffers (gpu/upload-mesh! (:mesh-context v) m))
+    (let [m (mesh)
+          draws (mapv (fn [{:keys [element/id mesh color]}]
+                        {:element/id id :buffers (gpu/upload-mesh! (:mesh-context v) mesh)
+                         :color color})
+                      (interaction/element-render-items (all-elements) (:selected @state)))]
+      (swap! viewport assoc :draws draws)
       (set! (.-textContent (.getElementById js/document "stats")) (str (count (storeys)) " storeys · " (count (all-elements)) " elements · " (/ (count (:indices m)) 3) " triangles"))
       (set! (.-textContent (.getElementById js/document "debug-state"))
             (js/JSON.stringify (clj->js {:storeyCount (count (storeys)) :activeStorey (:active-storey @state)
@@ -177,10 +181,10 @@
            (+ tz (* d (js/Math.cos elevation) (js/Math.sin azimuth)))]
      :target camera-target}))
 (defn- draw! []
-  (when-let [{:keys [buffers] :as v} @viewport]
-    (when buffers
+  (when-let [{:keys [draws] :as v} @viewport]
+    (when draws
       (let [{:keys [eye target]} (camera-state)]
-        (gpu/render-frame! v buffers eye target [0.55 0.7 0.95]))))
+        (gpu/render-scene! v draws eye target))))
   (js/requestAnimationFrame draw!))
 (defn- element-storey-id [element-id]
   (some (fn [storey]

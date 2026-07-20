@@ -3,6 +3,8 @@
   (:require [bim :as bim]))
 
 (def ^:private default-fov-radians (/ #?(:clj Math/PI :cljs js/Math.PI) 3.0))
+(def ^:private model-color [0.55 0.7 0.95])
+(def ^:private selection-color [1.0 0.58 0.12])
 (defn- sqrt [value] (#?(:clj Math/sqrt :cljs js/Math.sqrt) value))
 (defn- subtract [left right] (mapv - left right))
 (defn- add [left right] (mapv + left right))
@@ -74,6 +76,19 @@
                     :pick/distance distance :pick/bounds bounds}))))
        (sort-by (juxt :pick/distance (comp str :element/id)))
        first))
+
+(defn element-render-items
+  "Build stable per-element render items so selection can be highlighted in
+  the shared depth pass. Elements without renderable geometry are omitted."
+  [elements selected-id]
+  (->> elements
+       (keep (fn [element]
+               (when-let [mesh (bim/element-mesh element)]
+                 {:element/id (:id element)
+                  :mesh mesh
+                  :color (if (= selected-id (:id element))
+                           selection-color model-color)})))
+       vec))
 
 (defn frame-bounds
   "Return an orbit target and distance that fit a box at the requested FOV."
