@@ -65,7 +65,8 @@
        [:button {:id "route-pipe"} "Route pipe"] [:div {:id "engineering-status"} "Ready"]
        [:h2 "Rooms"] [:label "Width (m)" [:input {:id "room-width" :type "number" :value 4}]]
        [:label "Depth (m)" [:input {:id "room-depth" :type "number" :value 3}]]
-       [:button {:id "add-room"} "＋ Room"] [:div {:id "rooms"}]
+       [:button {:id "add-room"} "＋ Room"] [:button {:id "auto-rooms"} "Generate enclosed rooms (RM)"]
+       [:div {:id "rooms"}]
        [:label "Room name" [:input {:id "room-name" :value "Room"}]]
        [:label "Use" [:select {:id "room-category"}
                        (for [value ["residential" "office" "circulation" "service" "mechanical-room" "other"]]
