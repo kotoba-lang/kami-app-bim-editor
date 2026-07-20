@@ -41,7 +41,7 @@
                       :next-id 14 :next-storey-id 4
                       :selected-space nil :next-space-id 1000
                       :selected-clash nil :family-catalog (initial-family-catalog)
-                      :structural-model nil
+                      :structural-model nil :structural-overlay nil
                       :history [] :future [] :azimuth 0.75 :elevation 0.5 :last-snap nil
                       :camera-target [4.0 1.5 3.0] :camera-distance 14.0
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
@@ -183,10 +183,21 @@
 (defn- refresh! []
   (when-let [v @viewport]
     (let [m (mesh)
+          model-items (interaction/element-render-items (all-elements) (selection-ids))
+          overlay-items
+          (keep (fn [member]
+                  (when-let [mesh (bim/element-mesh
+                                   {:kind :analysis-result
+                                    :geometry {:kind :swept-disk-solid
+                                               :directrix (:structural.overlay/deformed-axis member)
+                                               :radius 0.035}})]
+                    {:element/id [:analysis (:structural.overlay/member-id member)]
+                     :mesh mesh :color (:structural.overlay/color member)}))
+                (get-in @state [:structural-overlay :structural.overlay/members]))
           draws (mapv (fn [{:keys [element/id mesh color]}]
                         {:element/id id :buffers (gpu/upload-mesh! (:mesh-context v) mesh)
                          :color color})
-                      (interaction/element-render-items (all-elements) (selection-ids)))]
+                      (concat model-items overlay-items))]
       (swap! viewport assoc :draws draws)
       (set! (.-textContent (.getElementById js/document "stats")) (str (count (storeys)) " storeys · " (count (all-elements)) " elements · " (/ (count (:indices m)) 3) " triangles"))
       (set! (.-textContent (.getElementById js/document "debug-state"))
@@ -260,7 +271,8 @@
          (fn [s]
            (-> s (update :history conj (:project s))
                (assoc :project p :future [] :save-status :dirty
-                      :drawing-views (reassociate-drawing-views (:drawing-views s) p))
+                      :drawing-views (reassociate-drawing-views (:drawing-views s) p)
+                      :structural-model nil :structural-overlay nil)
                (update :revision inc))))
   (refresh!))
 (defn- authoring-commit! [label operation]
@@ -561,7 +573,7 @@
 (defn- generate-structural-model! []
   (try
     (let [model (family/generate-structural-model (:project @state))]
-      (swap! state assoc :structural-model model)
+      (swap! state assoc :structural-model model :structural-overlay nil)
       (set! (.-textContent (.getElementById js/document "structural-model-status"))
             (str (count (:structural/nodes model)) " nodes · "
                  (count (:structural/members model)) " members · "
@@ -619,6 +631,25 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "structural-model-status"))
             (str "Error: " (.-message error))))))
+(defn- run-structural-analysis! []
+  (try
+    (let [model (:structural-model @state)
+          _ (when-not model (throw (js/Error. "Generate analytical model and loads first")))
+          analysis (family/analyze-structural-combination model :design-uls)
+          overlay (family/structural-result-overlay
+                   model analysis {:deformation-scale (num "structural-deformation-scale")})
+          utilizations (keep :structural.overlay/utilization
+                             (:structural.overlay/members overlay))
+          maximum (when (seq utilizations) (reduce max utilizations))]
+      (swap! state assoc :structural-overlay overlay)
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str (count (:structural.overlay/members overlay)) " results · max utilization "
+                 (if maximum (.toFixed maximum 3) "n/a")))
+      (refresh!))
+    (catch :default error
+      (swap! state assoc :structural-overlay nil)
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str "Analysis error: " (.-message error))))))
 (defn- route-pipe! []
   (let [start (parse-point "pipe-start") end (parse-point "pipe-end")
         diameter (num "pipe-diameter")
@@ -875,6 +906,8 @@
                     generate-structural-model!)
  (.addEventListener (.getElementById js/document "generate-structural-loads") "click"
                     generate-structural-loads!)
+ (.addEventListener (.getElementById js/document "run-structural-analysis") "click"
+                    run-structural-analysis!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "save-drawing-annotation") "click"
                     save-drawing-annotation!)

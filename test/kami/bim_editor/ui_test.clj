@@ -18,6 +18,7 @@
                 "assign-structural-role" "generate-structural-model" "structural-model-status"
                 "structural-area-load" "structural-wind-pressure"
                 "structural-seismic-coefficient" "generate-structural-loads"
+                "structural-deformation-scale" "run-structural-analysis"
                 "move-element" "copy-element" "move-x" "move-y" "move-z"
                 "snap-enabled" "snap-grid" "snap-tolerance" "snap-status"
                 "viewport-tool" "drag-measure" "snap-marker" "selection-box"
