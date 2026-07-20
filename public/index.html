@@ -114,6 +114,20 @@ button { cursor: pointer; text-align: left; }</style></head>
         <h2>Quantity schedule</h2>
         <button id="export-schedule">Export CSV</button>
         <div id="quantity-schedule"></div>
+        <h2>Drawing annotations</h2>
+        <label>Kind<select id="drawing-annotation-kind">
+          <option value="dimension">Dimension</option>
+          <option value="tag">Tag</option>
+          <option value="leader">Leader note</option>
+          <option value="revision-cloud">Revision cloud</option>
+        </select></label>
+        <label>Points (x,y; …)<input id="drawing-annotation-points" value="0,0;6,0"></label>
+        <label>Text<input id="drawing-annotation-text" value="Note"></label>
+        <label>Revision<input id="drawing-annotation-revision" value="P01"></label>
+        <button class="primary" id="save-drawing-annotation">Add annotation</button>
+        <button id="new-drawing-annotation">New annotation</button>
+        <div id="drawing-annotations"></div>
+        <div id="drawing-annotation-status">Annotations ready</div>
         <h2>Clash Detection</h2>
         <button class="primary" id="run-clashes">Run Clash Check</button>
         <button id="export-clashes">Export Clash CSV</button>
