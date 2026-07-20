@@ -279,7 +279,7 @@
         (remove string/blank?
                 (map string/trim
                      (string/split (.-value (.getElementById js/document id)) #";")))))
-(defn- parse-wall-layers []
+(defn- parse-material-layers [id]
   (mapv (fn [spec]
           (let [parts (mapv string/trim (string/split spec #":"))
                 [material thickness category] parts]
@@ -289,7 +289,8 @@
             (bim/material-layer material (js/parseFloat thickness) false (keyword category))))
         (remove string/blank?
                 (map string/trim
-                     (string/split (.-value (.getElementById js/document "wall-layers")) #",")))))
+                     (string/split (.-value (.getElementById js/document id)) #",")))))
+(defn- parse-wall-layers [] (parse-material-layers "wall-layers"))
 (defn- element-obstacle [element]
   (when-let [mesh (bim/element-mesh element)]
     (let [positions (:positions mesh)]
@@ -342,7 +343,8 @@
                       "mv" "move-element" "co" "copy-element"
                       "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
-                      "wj" "join-walls" "wl" "apply-wall-layers"})
+                      "wj" "join-walls" "wl" "apply-wall-layers"
+                      "sl" "apply-slab-layers" "so" "add-shaft-opening"})
 (def profile-shortcuts
   {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level"
               "f" "add-slab" "m" "move-element" "c" "copy-element"
@@ -781,6 +783,35 @@
                            (when (seq walls)
                              (transform-project (:project @state) walls
                                                 bim/set-wall-layers layers)))))))
+ (.addEventListener (.getElementById js/document "apply-slab-layers") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Slab layers applied"
+                       (fn []
+                         (let [slabs (filterv #(= :slab (:kind %)) (selected-elements))
+                               layers (parse-material-layers "slab-layers")]
+                           (when (seq slabs)
+                             (transform-project (:project @state) slabs
+                                                bim/set-slab-layers layers)))))))
+ (.addEventListener (.getElementById js/document "add-shaft-opening") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Shaft opening added"
+                       (fn []
+                         (when-let [floor (first (filter #(= :slab (:kind %))
+                                                        (selected-elements)))]
+                           (let [id (:next-id @state) x (num "shaft-x") y (num "shaft-y")
+                                 width (num "shaft-width") depth (num "shaft-depth")
+                                 z (nth (first (get-in floor [:geometry :boundary])) 2)
+                                 opening (bim/slab-opening
+                                          {:id id :boundary [[x y z] [(+ x width) y z]
+                                                             [(+ x width) (+ y depth) z]
+                                                             [x (+ y depth) z]]})
+                                 project (bim/update-element
+                                          (:project @state) (element-storey-id (:id floor))
+                                          (:id floor) bim/add-opening-to-slab opening)]
+                             (swap! state update :next-id inc)
+                             project))))))
  (.addEventListener (.getElementById js/document "delete") "click"
                     #(when-let [e (selected)]
                        (let [p (if (#{:door :window} (:kind e))
