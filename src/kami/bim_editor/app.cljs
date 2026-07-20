@@ -762,6 +762,63 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "engineering-status"))
             (str "Network error: " (.-message error))))))
+(defn- route-duct! []
+  (try
+    (let [start (parse-point "duct-start") end (parse-point "duct-end")
+          flow (num "duct-flow") max-velocity (num "duct-max-velocity")
+          sizing (family/size-rectangular-duct
+                  flow max-velocity
+                  [[0.2 0.15] [0.25 0.2] [0.3 0.2] [0.4 0.25]
+                   [0.5 0.3] [0.5 0.4] [0.6 0.4] [0.8 0.5] [1.0 0.6]])
+          width (:mep/width-m sizing) height (:mep/height-m sizing)
+          obstacles (vec (keep element-obstacle (all-elements)))
+          path (family/route-mep start end obstacles
+                                 {:step 0.25 :clearance (/ (max width height) 2.0)})]
+      (if (< (count path) 2)
+        (set! (.-textContent (.getElementById js/document "engineering-status"))
+              "No duct route found")
+        (let [route-id (str "duct-" (:next-id @state))
+              assembly (mep/rectangular-route-assembly
+                        {:id route-id :system-id :supply-air :domain :hvac
+                         :width width :height height :points path})
+              raw-segments (:mep.assembly/segments assembly)
+              fittings (:mep.assembly/fittings assembly)
+              results (mapv (fn [index segment]
+                              (let [[a b] (map :connector/point (:mep/connectors segment))]
+                                (family/rectangular-duct-pressure-loss
+                                 {:length-m (point-distance a b) :width-m width
+                                  :height-m height :roughness-m 9.0e-5
+                                  :flow-m3-s flow :density-kg-m3 1.204
+                                  :viscosity-pa-s 1.81e-5
+                                  :minor-loss-coefficient
+                                  (if (< index (count fittings)) 0.5 0.0)})))
+                            (range) raw-segments)
+              segments (mapv (fn [segment result]
+                               (assoc segment :mep/design-flow flow
+                                      :mep/velocity-m-s (:mep/velocity-m-s result)
+                                      :mep/pressure-loss-pa (:mep/pressure-loss-pa result)
+                                      :mep/hydraulic-diameter-m
+                                      (:mep/hydraulic-diameter-m result)))
+                             raw-segments results)
+              system (family/mep-system
+                      {:id route-id :name route-id :kind :hvac :medium :air
+                       :design-flow flow :segments segments :fittings fittings})
+              issues (family/validate-mep-system system)
+              _ (when (seq issues)
+                  (throw (js/Error. (str "Invalid duct: " (pr-str issues)))))
+              loss (reduce + (map :mep/pressure-loss-pa results))
+              project (reduce #(bim/add-element %1 (:active-storey @state) %2)
+                              (:project @state) (concat segments fittings))]
+          (swap! state update :next-id inc)
+          (select-only! (:id (first segments)))
+          (commit! project)
+          (set! (.-textContent (.getElementById js/document "engineering-status"))
+                (str "Supply duct " width " × " height " m · "
+                     (.toFixed (:mep/velocity-m-s sizing) 2) " m/s · "
+                     (count fittings) " elbows · " (.toFixed loss 1) " Pa")))))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Duct error: " (.-message error))))))
 (defn- add-mep-equipment! []
   (try
     (let [id (:next-id @state)
@@ -1047,6 +1104,7 @@
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "design-mep-network") "click"
                     design-mep-network!)
+ (.addEventListener (.getElementById js/document "route-duct") "click" route-duct!)
  (.addEventListener (.getElementById js/document "add-mep-equipment") "click"
                     add-mep-equipment!)
  (.addEventListener (.getElementById js/document "connect-mep-elements") "click"

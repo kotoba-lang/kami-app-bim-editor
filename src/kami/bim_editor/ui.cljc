@@ -108,6 +108,14 @@
        [:label "Maximum velocity (m/s)"
         [:input {:id "mep-network-max-velocity" :type "number" :min 0.1 :value 2}]]
        [:button {:id "design-mep-network"} "Design + route branched network"]
+       [:h3 "Supply-air duct"]
+       [:label "Duct start" [:input {:id "duct-start" :value "0,1,2.8"}]]
+       [:label "Duct end" [:input {:id "duct-end" :value "8,5,2.8"}]]
+       [:label "Design airflow (m³/s)"
+        [:input {:id "duct-flow" :type "number" :min 0.001 :step 0.1 :value 1.2}]]
+       [:label "Maximum air velocity (m/s)"
+        [:input {:id "duct-max-velocity" :type "number" :min 0.1 :value 6}]]
+       [:button {:id "route-duct"} "Size + route rectangular duct"]
        [:label "Equipment kind" [:select {:id "mep-equipment-kind"}
                                  [:option {:value "pump"} "Pump"]
                                  [:option {:value "air-terminal"} "Air terminal"]

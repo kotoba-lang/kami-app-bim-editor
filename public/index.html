@@ -123,6 +123,12 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Terminal B demand (L/s)<input id="mep-network-demand-b" type="number" min="0.001" value="2"></label>
         <label>Maximum velocity (m/s)<input id="mep-network-max-velocity" type="number" min="0.1" value="2"></label>
         <button id="design-mep-network">Design + route branched network</button>
+        <h3>Supply-air duct</h3>
+        <label>Duct start<input id="duct-start" value="0,1,2.8"></label>
+        <label>Duct end<input id="duct-end" value="8,5,2.8"></label>
+        <label>Design airflow (m³/s)<input id="duct-flow" type="number" min="0.001" step="0.1" value="1.2"></label>
+        <label>Maximum air velocity (m/s)<input id="duct-max-velocity" type="number" min="0.1" value="6"></label>
+        <button id="route-duct">Size + route rectangular duct</button>
         <label>Equipment kind<select id="mep-equipment-kind">
           <option value="pump">Pump</option>
           <option value="air-terminal">Air terminal</option>
