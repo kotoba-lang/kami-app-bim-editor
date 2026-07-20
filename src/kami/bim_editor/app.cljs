@@ -28,7 +28,15 @@
                             :position {:location [0 0 0]} :direction [0 0 1]
                             :depth [:param :height]}
                  :quantities {:gross-volume-m3 [:param :volume]}
-                 :psets {} :openings [] :connected-to []}})]))
+                 :psets {} :openings [] :connected-to []}})
+    (family/annotation-family-definition
+     {:id "wall-tag" :name "Wall Tag" :target-categories [:wall]
+      :default-anchor :midpoint :label-bindings {:label [:name]}
+      :parameters {:label {:type :text :scope :instance :default "Wall"}
+                   :prefix {:type :text :scope :type :default "W"}}
+      :types {:standard {:id "wall-tag-standard" :name "Standard"
+                         :parameters {:prefix "W"}}}
+      :template {:kind :tag :text [:param :label] :prefix [:param :prefix]}})]))
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :selection #{10}
                       :next-id 14 :next-storey-id 4
                       :selected-space nil :next-space-id 1000
@@ -69,7 +77,9 @@
 (defn- refresh-family-definitions! []
   (let [select (.getElementById js/document "family-definition")
         selected (.-value select)
-        families (get-in @state [:family-catalog :family-catalog/families])]
+        families (->> (get-in @state [:family-catalog :family-catalog/families])
+                      (remove (fn [[_ definition]] (= :annotation (:family/domain definition))))
+                      (into {}))]
     (set! (.-innerHTML select) "")
     (doseq [[family-id definition] (sort-by key families)]
       (let [option (.createElement js/document "option")]
@@ -77,6 +87,17 @@
         (set! (.-textContent option) (:family/name definition))
         (.appendChild select option)))
     (when (contains? families selected) (set! (.-value select) selected))))
+(defn- refresh-annotation-families! []
+  (let [select (.getElementById js/document "annotation-family")]
+    (set! (.-innerHTML select) "")
+    (doseq [[family-id definition]
+            (sort-by key (filter (fn [[_ definition]]
+                                   (= :annotation (:family/domain definition)))
+                                 (get-in @state [:family-catalog :family-catalog/families])))]
+      (let [option (.createElement js/document "option")]
+        (set! (.-value option) family-id)
+        (set! (.-textContent option) (:family/name definition))
+        (.appendChild select option)))))
 (defn- load-family-form! []
   (when-let [definition (selected-family)]
     (let [parameter #(get-in definition [:family/parameters % :default])]
@@ -430,6 +451,29 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "drawing-annotation-status"))
             (str "Error: " (.-message error))))))
+(defn- auto-tag-elements! []
+  (try
+    (let [family-id (.-value (.getElementById js/document "annotation-family"))
+          definition (get-in @state [:family-catalog :family-catalog/families family-id])
+          type-key (first (sort (keys (:family/types definition))))
+          tags (family/tag-elements-with-family
+                (:family-catalog @state) family-id type-key
+                (:elements (bim/find-storey (:project @state) (:active-storey @state)))
+                {:offset [0 0.2]})
+          view (active-drawing-view)
+          retained (into [] (remove #(= family-id (:annotation/family-id %)))
+                         (:view/annotations view))
+          updated (reduce family/add-view-annotation
+                          (assoc view :view/annotations retained) tags)]
+      (swap! state assoc-in [:drawing-views (:active-storey @state)] updated)
+      (swap! state assoc :selected-annotation nil :save-status :dirty)
+      (swap! state update :revision inc)
+      (set! (.-textContent (.getElementById js/document "drawing-annotation-status"))
+            (str (count tags) " tags placed"))
+      (refresh!))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "drawing-annotation-status"))
+            (str "Error: " (.-message error))))))
 (defn- apply-print-setting! []
   (try
     (let [setting (family/print-setting
@@ -556,8 +600,9 @@
            :camera-distance (or (:distance camera) 14.0)
            :profile (:profile interaction) :next-id (inc (reduce max 13 element-ids))
            :next-storey-id (inc (reduce max 3 storey-ids)) :next-space-id (inc (reduce max 999 space-ids))
-           :family-catalog (if (seq (:project/family-catalog p))
-                             (:project/family-catalog p) (initial-family-catalog))
+           :family-catalog
+           (update (initial-family-catalog) :family-catalog/families merge
+                   (get-in p [:project/family-catalog :family-catalog/families] {}))
            :drawing-views (:project/drawings p)
            :print-setting (if (seq (:project/print-setting p))
                             (:project/print-setting p)
@@ -584,6 +629,9 @@
             (:print-setting/scale setting))
       (set! (.-value (.getElementById js/document "print-color"))
             (name (:print-setting/color-mode setting))))
+    (refresh-family-definitions!)
+    (refresh-annotation-families!)
+    (refresh-family-types!)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile interaction))) (refresh!)))
 (defn- load-project! []
   (when-let [data (.getItem js/localStorage storage-key)]
@@ -733,12 +781,15 @@
                     save-drawing-annotation!)
  (.addEventListener (.getElementById js/document "new-drawing-annotation") "click"
                     new-drawing-annotation!)
+ (.addEventListener (.getElementById js/document "auto-tag-elements") "click"
+                    auto-tag-elements!)
  (.addEventListener (.getElementById js/document "apply-view-range") "click"
                     apply-view-range!)
  (.addEventListener (.getElementById js/document "apply-print-setting") "click"
                     apply-print-setting!)
  (.addEventListener (.getElementById js/document "family-definition") "change" refresh-family-types!)
  (refresh-family-definitions!)
+ (refresh-annotation-families!)
  (refresh-family-types!)
  (.addEventListener (.getElementById js/document "save-family-definition") "click"
                     #(try

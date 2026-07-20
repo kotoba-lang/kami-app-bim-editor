@@ -31,6 +31,7 @@
                 "add-room" "auto-rooms" "quantity-schedule" "clash-results" "drawing-kind"
                 "drawing-annotation-kind" "drawing-annotation-points"
                 "drawing-annotation-text" "drawing-annotation-revision"
+                "annotation-family" "auto-tag-elements"
                 "save-drawing-annotation" "new-drawing-annotation"
                 "drawing-annotations" "drawing-annotation-status"
                 "view-range-top" "view-range-cut" "view-range-bottom" "view-range-depth"
