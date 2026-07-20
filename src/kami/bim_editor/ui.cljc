@@ -85,6 +85,8 @@
        [:label "Wind pressure (kPa)" [:input {:id "structural-wind-pressure" :type "number" :min 0 :value 1}]]
        [:label "Seismic coefficient" [:input {:id "structural-seismic-coefficient" :type "number" :min 0.001 :step 0.05 :value 0.2}]]
        [:button {:id "generate-structural-loads"} "Generate design loads"]
+       [:label "Deformation scale" [:input {:id "structural-deformation-scale" :type "number" :min 0 :value 100}]]
+       [:button {:id "run-structural-analysis"} "Run ULS + show results"]
        [:label "Structural span (m)" [:input {:id "structural-span" :type "number" :value 6}]]
        [:label "Axial load (kN)" [:input {:id "structural-load" :type "number" :value 100}]]
        [:button {:id "analyze-structure"} "Analyze member"]
