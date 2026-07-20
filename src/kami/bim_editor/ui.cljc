@@ -30,6 +30,11 @@
       [:aside
        [:h2 "Elements"] [:p {:id "profile-hint"} "WA Wall · DR Door · WN Window · LL Level · FL Floor"]
        [:button.primary {:id "add-wall"} "＋ Wall"] [:button {:id "add-slab"} "＋ Floor slab"]
+       [:label "Roof width (m)" [:input {:id "roof-width" :type "number" :min 0.1 :step 0.5 :value 8}]]
+       [:label "Roof depth (m)" [:input {:id "roof-depth" :type "number" :min 0.1 :step 0.5 :value 6}]]
+       [:label "Roof slope (deg)" [:input {:id "roof-slope" :type "number" :min 1 :max 89 :step 1 :value 30}]]
+       [:label "Roof thickness (m)" [:input {:id "roof-thickness" :type "number" :min 0.01 :step 0.05 :value 0.2}]]
+       [:button {:id "add-roof"} "＋ Gable roof (RF)"]
        [:button {:id "add-door"} "＋ Door in selected wall"] [:button {:id "add-window"} "＋ Window in selected wall"]
        [:h2 "Families"] [:label "Definition" [:select {:id "family-definition"} [:option {:value "casework"} "Casework"]]]
        [:label "Type" [:select {:id "family-type"}]]

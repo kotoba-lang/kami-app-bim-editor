@@ -5,7 +5,8 @@
 
 (deftest generated-ui-retains-complete-authoring-workspace
   (let [page (ui/page)]
-    (doseq [id ["add-wall" "add-family-instance" "analyze-structure" "route-pipe"
+    (doseq [id ["add-wall" "add-roof" "roof-width" "roof-depth" "roof-slope"
+                "roof-thickness" "add-family-instance" "analyze-structure" "route-pipe"
                 "move-element" "copy-element" "move-x" "move-y" "move-z"
                 "snap-enabled" "snap-grid" "snap-tolerance" "snap-status"
                 "viewport-tool" "drag-measure" "snap-marker" "selection-box"
