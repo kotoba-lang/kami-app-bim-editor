@@ -41,6 +41,7 @@
                       :next-id 14 :next-storey-id 4
                       :selected-space nil :next-space-id 1000
                       :selected-clash nil :family-catalog (initial-family-catalog)
+                      :structural-model nil
                       :history [] :future [] :azimuth 0.75 :elevation 0.5 :last-snap nil
                       :camera-target [4.0 1.5 3.0] :camera-distance 14.0
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
@@ -526,6 +527,49 @@
     (set! (.-textContent (.getElementById js/document "engineering-status"))
           (str "Axial " (.toFixed (/ force 1000.0) 2) " kN · Δ "
                (.toFixed (* displacement 1000.0) 3) " mm"))))
+(defn- assign-structural-role! []
+  (try
+    (let [element (selected)
+          role (keyword (.-value (.getElementById js/document "structural-role")))
+          valid? (case (:kind element)
+                   :wall (= :shear-wall role)
+                   :slab (= :diaphragm role)
+                   (contains? #{:beam :column} role))]
+      (when-not element (throw (js/Error. "Select an element")))
+      (when-not valid?
+        (throw (js/Error. (str "Role " (name role) " is incompatible with "
+                               (name (:kind element))))))
+      (let [axis (when (contains? #{:beam :column} role)
+                   (or (:structural/analytical-axis element)
+                       (get-in element [:geometry :axis])))
+            structural (family/structural-member
+                        element {:role role :analytical-axis axis
+                                 :section {:kind :rectangle
+                                           :width-m (num "structural-width")
+                                           :depth-m (num "structural-depth")}
+                                 :material {:name "Structural Steel"
+                                            :elastic-modulus-pa 2.0e11
+                                            :yield-strength-pa 3.55e8
+                                            :density-kg-m3 7850}})]
+        (commit! (bim/update-element (:project @state) (element-storey-id (:id element))
+                                     (:id element) (constantly structural)))
+        (set! (.-textContent (.getElementById js/document "structural-model-status"))
+              (str "Assigned " (name role) " to " (:id element)))))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str "Error: " (.-message error))))))
+(defn- generate-structural-model! []
+  (try
+    (let [model (family/generate-structural-model (:project @state))]
+      (swap! state assoc :structural-model model)
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str (count (:structural/nodes model)) " nodes · "
+                 (count (:structural/members model)) " members · "
+                 (count (:structural/shells model)) " shells · "
+                 (count (family/validate-structural-model model)) " issues")))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str "Error: " (.-message error))))))
 (defn- route-pipe! []
   (let [start (parse-point "pipe-start") end (parse-point "pipe-end")
         diameter (num "pipe-diameter")
@@ -776,6 +820,10 @@
                             (hide-selection-box!) (refresh!))
                         (invoke-shortcut! event))))
  (.addEventListener (.getElementById js/document "analyze-structure") "click" analyze-structure!)
+ (.addEventListener (.getElementById js/document "assign-structural-role") "click"
+                    assign-structural-role!)
+ (.addEventListener (.getElementById js/document "generate-structural-model") "click"
+                    generate-structural-model!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "save-drawing-annotation") "click"
                     save-drawing-annotation!)

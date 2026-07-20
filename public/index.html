@@ -88,6 +88,16 @@ button { cursor: pointer; text-align: left; }</style></head>
         <button class="primary" id="add-family-instance">＋ Family instance</button>
         <div id="family-status">Family ready</div>
         <h2>Engineering</h2>
+        <label>Structural role<select id="structural-role">
+          <option value="beam">Beam</option>
+          <option value="column">Column</option>
+          <option value="shear-wall">Shear wall</option>
+          <option value="diaphragm">Diaphragm</option>
+        </select></label>
+        <label>Section width (m)<input id="structural-width" type="number" min="0.01" value="0.25"></label>
+        <label>Section depth (m)<input id="structural-depth" type="number" min="0.01" value="0.5"></label>
+        <button id="assign-structural-role">Assign selected structural role</button>
+        <button id="generate-structural-model">Generate analytical model</button>
         <label>Structural span (m)<input id="structural-span" type="number" value="6"></label>
         <label>Axial load (kN)<input id="structural-load" type="number" value="100"></label>
         <button id="analyze-structure">Analyze member</button>
@@ -96,6 +106,7 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Pipe diameter (m)<input id="pipe-diameter" type="number" value="0.1"></label>
         <button id="route-pipe">Route pipe</button>
         <div id="engineering-status">Ready</div>
+        <div id="structural-model-status">No analytical model</div>
         <h2>Rooms</h2>
         <label>Width (m)<input id="room-width" type="number" value="4"></label>
         <label>Depth (m)<input id="room-depth" type="number" value="3"></label>

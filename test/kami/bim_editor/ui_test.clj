@@ -14,6 +14,8 @@
                 "family-width" "family-material" "family-shared" "family-detail"
                 "save-family-definition" "family-type-name" "save-family-type"
                 "family-status" "analyze-structure" "route-pipe"
+                "structural-role" "structural-width" "structural-depth"
+                "assign-structural-role" "generate-structural-model" "structural-model-status"
                 "move-element" "copy-element" "move-x" "move-y" "move-z"
                 "snap-enabled" "snap-grid" "snap-tolerance" "snap-status"
                 "viewport-tool" "drag-measure" "snap-marker" "selection-box"
