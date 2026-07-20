@@ -223,9 +223,35 @@
   (download-text! "building.ifc" "application/x-step"
                   (ifc/write-spf (integration/coordinated-ifc (:project @state)))))
 (defn- download-drawing! []
-  (when-let [storey (bim/find-storey (:project @state) (:active-storey @state))]
-    (download-text! (str "floor-plan-" (:id storey) ".svg") "image/svg+xml"
-                    (drawing/floor-plan-svg storey))))
+  (let [model (:project @state)
+        storey (bim/find-storey model (:active-storey @state))
+        building (some-> model :sites first :buildings first)
+        kind (keyword (.-value (.getElementById js/document "drawing-kind")))
+        plan (when storey (drawing/documented-floor-plan storey))
+        section (when building (drawing/orthographic-view building
+                                                           {:kind :section :axis :x
+                                                            :cut-position 0.0 :depth 20.0
+                                                            :title "Section A"}))
+        [filename content]
+        (case kind
+          :section [(str "section-" (:id building) ".svg")
+                    (drawing/orthographic-view-svg building {:kind :section :axis :x
+                                                             :cut-position 0.0 :depth 20.0
+                                                             :title "Section A"})]
+          :elevation [(str "elevation-" (:id building) ".svg")
+                      (drawing/orthographic-view-svg building {:kind :elevation :axis :x
+                                                               :cut-position 0.0
+                                                               :title "North Elevation"})]
+          :sheet ["sheet-A-001.svg"
+                  (drawing/drawing-sheet-svg
+                   {:number "A-001" :name "General Arrangements" :size :a1 :revision "P01"
+                    :viewports [{:view plan :x 20 :y 20 :width 380 :height 260
+                                 :title (:name storey) :scale 100}
+                                {:view section :x 430 :y 20 :width 380 :height 260
+                                 :title "Section A" :scale 50}]})]
+          [(str "floor-plan-" (:id storey) ".svg")
+           (drawing/documented-floor-plan-svg storey)])]
+    (when content (download-text! filename "image/svg+xml" content))))
 (defn- import-ifc! [event]
   (when-let [file (aget (.. event -target -files) 0)]
     (-> (.text file) (.then #(apply-project! (integration/import-ifc-spf %))))))
