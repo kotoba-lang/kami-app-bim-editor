@@ -31,3 +31,12 @@
   (let [source (model)
         text (ifc/write-spf (integration/coordinated-ifc source))]
     (is (= source (integration/import-ifc-spf text)))))
+
+(deftest exports-pdf-and-dxf-through-shared-libraries
+  (let [project (model)
+        dxf (integration/export-drawing project 3 :dxf)
+        pdf (integration/export-drawing project 3 :pdf)]
+    (is (= "application/dxf" (:media-type dxf)))
+    (is (re-find #"0\nSECTION\n2\nENTITIES" (:content dxf)))
+    (is (= "application/pdf" (:media-type pdf)))
+    (is (= "%PDF" (apply str (map char (take 4 (:content pdf))))))))
