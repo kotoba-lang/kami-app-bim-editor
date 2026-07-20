@@ -115,6 +115,10 @@
        [:button {:id "offset-walls"} "Offset walls (OF)"]
        [:button {:id "trim-walls"} "Trim / Extend walls (TR)"]
        [:button {:id "join-walls"} "Join walls (WJ)"]
+       [:label "Wall layers (material:thickness:category)"
+        [:input {:id "wall-layers" :type "text"
+                 :value "Gypsum:0.013:gypsum,Insulation:0.09:insulation,Concrete:0.20:concrete"}]]
+       [:button {:id "apply-wall-layers"} "Apply wall layers (WL)"]
        [:div {:id "authoring-status"} "Modify ready"]
        [:button {:id "delete"} "Delete element"]]]
      [:span {:id "debug-state" :style {:display "none"}}] [:script {:src "./js/app.js"}]]]))
