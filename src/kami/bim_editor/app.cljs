@@ -273,6 +273,17 @@
 (defn- parse-point [id]
   (mapv #(js/parseFloat (.trim %))
         (string/split (.-value (.getElementById js/document id)) #",")))
+(defn- parse-wall-layers []
+  (mapv (fn [spec]
+          (let [parts (mapv string/trim (string/split spec #":"))
+                [material thickness category] parts]
+            (when (or (not= 3 (count parts)) (string/blank? material) (string/blank? thickness)
+                      (string/blank? category))
+              (throw (js/Error. (str "Invalid wall layer: " spec))))
+            (bim/material-layer material (js/parseFloat thickness) false (keyword category))))
+        (remove string/blank?
+                (map string/trim
+                     (string/split (.-value (.getElementById js/document "wall-layers")) #",")))))
 (defn- element-obstacle [element]
   (when-let [mesh (bim/element-mesh element)]
     (let [positions (:positions mesh)]
@@ -323,7 +334,7 @@
                       "fl" "add-slab" "mv" "move-element" "co" "copy-element"
                       "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
-                      "wj" "join-walls"})
+                      "wj" "join-walls" "wl" "apply-wall-layers"})
 (def profile-shortcuts
   {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level"
               "f" "add-slab" "m" "move-element" "c" "copy-element"
@@ -679,6 +690,16 @@
                                                          (constantly left))
                                      (bim/update-element (element-storey-id (:id right)) (:id right)
                                                          (constantly right)))))))))))
+ (.addEventListener (.getElementById js/document "apply-wall-layers") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Wall layers applied"
+                       (fn []
+                         (let [walls (filterv #(= :wall (:kind %)) (selected-elements))
+                               layers (parse-wall-layers)]
+                           (when (seq walls)
+                             (transform-project (:project @state) walls
+                                                bim/set-wall-layers layers)))))))
  (.addEventListener (.getElementById js/document "delete") "click"
                     #(when-let [e (selected)]
                        (let [p (if (#{:door :window} (:kind e))
