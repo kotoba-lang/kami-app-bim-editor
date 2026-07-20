@@ -12,6 +12,8 @@
                 "curtain-columns" "curtain-rows"
                 "add-family-instance" "family-id" "family-name" "family-category"
                 "family-width" "family-material" "family-shared" "family-detail"
+                "family-formulas" "family-reference-planes" "family-constraints"
+                "family-sketches" "family-template"
                 "save-family-definition" "family-type-name" "save-family-type"
                 "family-status" "analyze-structure" "route-pipe"
                 "pipe-start" "pipe-end" "pipe-diameter" "pipe-flow" "pipe-slope"

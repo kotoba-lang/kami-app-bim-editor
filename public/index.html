@@ -77,6 +77,11 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Height (m)<input id="family-height" type="number" value="0.9"></label>
         <label>Material<input id="family-material" value="Oak"></label>
         <label>Shared family<input id="family-shared" type="checkbox"></label>
+        <label>Formulas (EDN)<textarea id="family-formulas" rows="3">{}</textarea></label>
+        <label>Reference planes (EDN)<textarea id="family-reference-planes" rows="3">{}</textarea></label>
+        <label>Constraints (EDN)<textarea id="family-constraints" rows="3">[]</textarea></label>
+        <label>Sketches (EDN)<textarea id="family-sketches" rows="5">{}</textarea></label>
+        <label>Family template (EDN)<textarea id="family-template" rows="8">{}</textarea></label>
         <button id="save-family-definition">Save family definition</button>
         <label>Type name<input id="family-type-name" value="Standard"></label>
         <button id="save-family-type">Save family type</button>
