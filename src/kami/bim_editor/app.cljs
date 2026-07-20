@@ -194,7 +194,7 @@
                     (drawing/floor-plan-svg storey))))
 (defn- import-ifc! [event]
   (when-let [file (aget (.. event -target -files) 0)]
-    (-> (.text file) (.then #(apply-project! (ifc/read-spf %))))))
+    (-> (.text file) (.then #(apply-project! (integration/import-ifc-spf %))))))
 (defn- import-project! [event]
   (when-let [file (aget (.. event -target -files) 0)] (-> (.text file) (.then #(apply-project! (reader/read-string %))))))
 (defn- invoke-shortcut! [event]

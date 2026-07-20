@@ -22,3 +22,6 @@
 
 (defn coordinated-ifc [project]
   (bim-integration/export-ifc project))
+
+(defn import-ifc-spf [text]
+  (bim-integration/import-ifc-spf text))
