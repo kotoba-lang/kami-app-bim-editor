@@ -340,6 +340,7 @@
 (def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level"
                       "fl" "add-slab" "rf" "add-roof" "st" "add-stair" "rl" "add-railing"
                       "cw" "add-curtain"
+                      "rm" "auto-rooms"
                       "mv" "move-element" "co" "copy-element"
                       "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
@@ -620,6 +621,37 @@
                                          :rows (num "curtain-rows")})]
                            (swap! state assoc :next-id (inc id) :selected id :selection #{id})
                            (bim/add-element (:project @state) (:active-storey @state) curtain))))))
+ (.addEventListener (.getElementById js/document "auto-rooms") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Enclosed rooms generated"
+                       (fn []
+                         (let [storey-id (:active-storey @state)
+                               storey (bim/find-storey (:project @state) storey-id)
+                               boundaries (bim/enclosed-wall-boundaries (:elements storey))
+                               boundary-key (fn [boundary]
+                                              (set (map (fn [point]
+                                                          (mapv #(js/Math.round (* 1.0e6 %)) point))
+                                                        boundary)))
+                               existing-boundaries (set (map (comp boundary-key :boundary)
+                                                             (:spaces storey)))
+                               missing (vec (remove #(contains? existing-boundaries
+                                                               (boundary-key %)) boundaries))
+                               first-id (:next-space-id @state)
+                               identities (mapv (fn [offset]
+                                                  (let [id (+ first-id offset)]
+                                                    {:id id :name (str "Room " id) :label (str id)}))
+                                                (range (count missing)))
+                               rooms (mapv (fn [boundary identity]
+                                             (bim/room-space
+                                              {:id (:id identity) :name (:name identity)
+                                               :label (:label identity) :category :other
+                                               :boundary boundary :height (:height storey)}))
+                                           missing identities)]
+                           (when (seq rooms)
+                             (swap! state update :next-space-id + (count rooms))
+                             (reduce #(bim/add-space %1 storey-id %2)
+                                     (:project @state) rooms)))))))
  (.addEventListener (.getElementById js/document "add-room") "click"
                     #(let [id (:next-space-id @state) storey (bim/find-storey (:project @state) (:active-storey @state))
                            z (:elevation storey) width (max 0.1 (num "room-width")) depth (max 0.1 (num "room-depth"))
