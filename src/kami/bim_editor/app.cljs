@@ -36,9 +36,12 @@
                       :history [] :future [] :azimuth 0.75 :elevation 0.5 :last-snap nil
                       :camera-target [4.0 1.5 3.0] :camera-distance 14.0
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
+                      :drawing-views {3 (family/drawing-view
+                                         {:id "plan-3" :kind :floor-plan :name "Ground Floor"})}
+                      :selected-annotation nil :next-annotation-id 1
                       :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
-(declare refresh!)
+(declare refresh! refresh-drawing-annotations!)
 (defn- storeys [] (:storeys (bim/find-building (:project @state) 2)))
 (defn- elements [] (:elements (bim/find-storey (:project @state) (:active-storey @state))))
 (defn- all-elements [] (mapcat :elements (storeys)))
@@ -208,6 +211,7 @@
         (.appendChild rooms b))))
   (refresh-schedule!)
   (refresh-clashes!)
+  (refresh-drawing-annotations!)
   (when-let [e (selected)]
     (let [wall? (= :wall (:kind e))]
       (set! (.-textContent (.getElementById js/document "inspector-title")) (str "Selected " (name (:kind e))))
@@ -305,6 +309,92 @@
         (remove string/blank?
                 (map string/trim
                      (string/split (.-value (.getElementById js/document id)) #";")))))
+(defn- active-drawing-view []
+  (or (get-in @state [:drawing-views (:active-storey @state)])
+      (family/drawing-view {:id (str "plan-" (:active-storey @state))
+                            :kind :floor-plan :name "Floor Plan"})))
+(defn- annotation-points-text [annotation]
+  (let [points (case (:kind annotation)
+                 :dimension [(:from annotation) (:to annotation)]
+                 (:tag :text :level) [(:point annotation)]
+                 (:points annotation))]
+    (string/join ";" (map #(string/join "," %) points))))
+(defn- load-drawing-annotation! [annotation]
+  (swap! state assoc :selected-annotation (:annotation/id annotation))
+  (set! (.-value (.getElementById js/document "drawing-annotation-kind"))
+        (name (:kind annotation)))
+  (set! (.-value (.getElementById js/document "drawing-annotation-points"))
+        (annotation-points-text annotation))
+  (set! (.-value (.getElementById js/document "drawing-annotation-text"))
+        (or (:text annotation) (:label annotation) ""))
+  (set! (.-value (.getElementById js/document "drawing-annotation-revision"))
+        (or (:revision annotation) ""))
+  (set! (.-textContent (.getElementById js/document "save-drawing-annotation"))
+        "Update annotation")
+  (refresh-drawing-annotations!))
+(defn- refresh-drawing-annotations! []
+  (when-let [container (.getElementById js/document "drawing-annotations")]
+    (set! (.-innerHTML container) "")
+    (doseq [annotation (:view/annotations (active-drawing-view))]
+      (let [row (.createElement js/document "div")
+            edit (.createElement js/document "button")
+            delete (.createElement js/document "button")]
+        (set! (.-textContent edit)
+              (str (name (:kind annotation)) " · "
+                   (or (:text annotation) (:label annotation)
+                       (:revision annotation) (:annotation/id annotation))))
+        (when (= (:annotation/id annotation) (:selected-annotation @state))
+          (.add (.-classList edit) "selected"))
+        (set! (.-textContent delete) "Delete")
+        (.addEventListener edit "click" #(load-drawing-annotation! annotation))
+        (.addEventListener delete "click"
+                           #(do (swap! state update-in
+                                      [:drawing-views (:active-storey @state)]
+                                      family/remove-view-annotation (:annotation/id annotation))
+                                (swap! state assoc :selected-annotation nil
+                                       :save-status :dirty)
+                                (swap! state update :revision inc)
+                                (refresh!)))
+        (.appendChild row edit) (.appendChild row delete) (.appendChild container row)))))
+(defn- new-drawing-annotation! []
+  (swap! state assoc :selected-annotation nil)
+  (set! (.-textContent (.getElementById js/document "save-drawing-annotation"))
+        "Add annotation")
+  (set! (.-value (.getElementById js/document "drawing-annotation-points")) "0,0;6,0")
+  (set! (.-value (.getElementById js/document "drawing-annotation-text")) "Note")
+  (refresh-drawing-annotations!))
+(defn- save-drawing-annotation! []
+  (try
+    (let [kind (keyword (.-value (.getElementById js/document "drawing-annotation-kind")))
+          points (parse-path "drawing-annotation-points")
+          points (mapv #(subvec % 0 (min 2 (count %))) points)
+          text (.-value (.getElementById js/document "drawing-annotation-text"))
+          revision (.-value (.getElementById js/document "drawing-annotation-revision"))
+          existing-id (:selected-annotation @state)
+          id (or existing-id (:next-annotation-id @state))
+          spec (case kind
+                 :dimension {:id id :kind kind :from (first points) :to (second points)
+                             :label (when-not (string/blank? text) text)}
+                 :tag {:id id :kind kind :point (first points) :text text}
+                 :leader {:id id :kind kind :points points :text text}
+                 :revision-cloud {:id id :kind kind :points points :revision revision})
+          view (active-drawing-view)
+          updated (if existing-id
+                    (family/update-view-annotation view id spec)
+                    (family/add-view-annotation view spec))]
+      (swap! state assoc-in [:drawing-views (:active-storey @state)] updated)
+      (swap! state (fn [state]
+                     (cond-> (-> state (assoc :selected-annotation id :save-status :dirty)
+                                 (update :revision inc))
+                       (nil? existing-id) (update :next-annotation-id inc))))
+      (set! (.-textContent (.getElementById js/document "drawing-annotation-status"))
+            (str (if existing-id "Updated " "Added ") (name kind)))
+      (set! (.-textContent (.getElementById js/document "save-drawing-annotation"))
+            "Update annotation")
+      (refresh-drawing-annotations!))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "drawing-annotation-status"))
+            (str "Error: " (.-message error))))))
 (defn- parse-material-layers [id]
   (mapv (fn [spec]
           (let [parts (mapv string/trim (string/split spec #":"))
@@ -384,9 +474,10 @@
 (def ^:private backup-key "kami.bim-editor.project.backup")
 (defn- project-document []
   (let [{:keys [project-id project-name project active-storey selected azimuth elevation
-                camera-target camera-distance profile]} @state]
+                camera-target camera-distance profile drawing-views]} @state]
     (project/document {:id project-id :name project-name :building-model project
                        :family-catalog (:family-catalog @state)
+                       :drawings drawing-views
                        :editor {:active-storey active-storey :selected selected
                                 :selection (vec (selection-ids))}
                        :camera {:azimuth azimuth :elevation elevation :target camera-target
@@ -414,6 +505,11 @@
            :next-storey-id (inc (reduce max 3 storey-ids)) :next-space-id (inc (reduce max 999 space-ids))
            :family-catalog (if (seq (:project/family-catalog p))
                              (:project/family-catalog p) (initial-family-catalog))
+           :drawing-views (:project/drawings p)
+           :selected-annotation nil
+           :next-annotation-id
+           (inc (reduce max 0 (keep #(when (number? (:annotation/id %)) (:annotation/id %))
+                                    (mapcat :view/annotations (vals (:project/drawings p))))))
            :selected-space nil :history [] :future [] :shortcut-buffer "" :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile interaction))) (refresh!)))
 (defn- load-project! []
@@ -448,7 +544,8 @@
         building (some-> model :sites first :buildings first)
         kind (keyword (.-value (.getElementById js/document "drawing-kind")))
         format (keyword (.-value (.getElementById js/document "drawing-format")))
-        plan (when storey (drawing/documented-floor-plan storey))
+        annotations (get-in @state [:drawing-views (:active-storey @state) :view/annotations])
+        plan (when storey (drawing/documented-floor-plan storey {:annotations annotations}))
         section (when building (drawing/orthographic-view building
                                                            {:kind :section :axis :x
                                                             :cut-position 0.0 :depth 20.0
@@ -471,7 +568,7 @@
                                 {:view section :x 430 :y 20 :width 380 :height 260
                                  :title "Section A" :scale 50}]})]
           [(str "floor-plan-" (:id storey) ".svg")
-           (drawing/documented-floor-plan-svg storey)])]
+           (drawing/documented-floor-plan-svg storey {:annotations annotations})])]
     (case format
       :dxf (let [{:keys [filename media-type content]}
                  (integration/export-drawing model (:active-storey @state) :dxf)]
@@ -553,6 +650,10 @@
                         (invoke-shortcut! event))))
  (.addEventListener (.getElementById js/document "analyze-structure") "click" analyze-structure!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
+ (.addEventListener (.getElementById js/document "save-drawing-annotation") "click"
+                    save-drawing-annotation!)
+ (.addEventListener (.getElementById js/document "new-drawing-annotation") "click"
+                    new-drawing-annotation!)
  (.addEventListener (.getElementById js/document "family-definition") "change" refresh-family-types!)
  (refresh-family-definitions!)
  (refresh-family-types!)

@@ -4,12 +4,15 @@
 (deftest round-trip
   (let [p (project/document {:id "house" :name "House" :building-model model :editor {:active-storey 3 :selected nil}
                              :camera {:azimuth 1 :elevation 0.5} :interaction {:profile :revit}})]
-    (is (project/valid? p)) (is (= p (project/open p))) (is (= 3 (:kami/version p)))))
+    (is (project/valid? p)) (is (= p (project/open p))) (is (= 4 (:kami/version p)))
+    (is (= {} (:project/drawings p)))))
 (deftest version-two-migration
   (let [old (assoc (project/document {:id "old" :building-model model :editor {}
                                       :camera {} :interaction {}})
                    :kami/version 2)]
-    (is (= {} (:project/family-catalog (project/open (dissoc old :project/family-catalog)))))))
+    (let [migrated (project/open (dissoc old :project/family-catalog :project/drawings))]
+      (is (= {} (:project/family-catalog migrated)))
+      (is (= {} (:project/drawings migrated))))))
 (deftest legacy-migration (let [p (project/open model)] (is (= model (:project/building-model p))) (is (= 3 (get-in p [:project/editor :active-storey])))))
 (deftest rejects-invalid
   (is (thrown? #?(:clj Exception :cljs js/Error) (project/open {:sites []})))

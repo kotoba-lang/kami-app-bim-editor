@@ -29,6 +29,10 @@
                 "shaft-width" "shaft-depth" "add-shaft-opening"
                 "host-offset" "host-sill" "rehost-element"
                 "add-room" "auto-rooms" "quantity-schedule" "clash-results" "drawing-kind"
+                "drawing-annotation-kind" "drawing-annotation-points"
+                "drawing-annotation-text" "drawing-annotation-revision"
+                "save-drawing-annotation" "new-drawing-annotation"
+                "drawing-annotations" "drawing-annotation-status"
                 "drawing-format" "export-drawing" "import-ifc-file"]]
       (is (string/includes? page (str "id=\"" id "\""))))
     (is (string/includes? page "value=\"pdf\""))
