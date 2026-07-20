@@ -56,6 +56,9 @@
                 "view-range-top" "view-range-cut" "view-range-bottom" "view-range-depth"
                 "apply-view-range" "print-paper" "print-orientation" "print-scale"
                 "print-color" "apply-print-setting" "print-status"
+                "title-block-organization" "title-block-client"
+                "title-block-drawn-by" "title-block-checked-by"
+                "generate-drawing-set" "drawing-set-status"
                 "drawing-format" "export-drawing" "import-ifc-file"]]
       (is (string/includes? page (str "id=\"" id "\""))))
     (is (string/includes? page "value=\"pdf\""))

@@ -53,6 +53,7 @@
                       :print-setting (family/print-setting
                                       {:id :default :name "Default" :paper-size :a1
                                        :orientation :landscape :scale 100})
+                      :drawing-set {}
                       :selected-annotation nil :next-annotation-id 1
                       :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
@@ -518,6 +519,45 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "print-status"))
             (str "Error: " (.-message error))))))
+(defn- generate-drawing-set! []
+  (try
+    (let [generated (family/generate-drawing-set (:project @state))
+          setting (:print-setting @state)
+          paper-size (:print-setting/paper-size setting)
+          [raw-width raw-height] (get drawing/sheet-sizes-mm paper-size [841 594])
+          portrait? (= :portrait (:print-setting/orientation setting))
+          [paper-width paper-height] (if portrait?
+                                      [(min raw-width raw-height) (max raw-width raw-height)]
+                                      [(max raw-width raw-height) (min raw-width raw-height)])
+          view-ids (get-in generated [:drawing/sheets 0 :sheet/views])
+          title-block (family/title-block
+                       {:id :project-title-block :name "Project Title Block"
+                        :width 250 :height 55
+                        :organization (.-value (.getElementById js/document
+                                                                "title-block-organization"))
+                        :project (:project-name @state)
+                        :client (.-value (.getElementById js/document "title-block-client"))
+                        :drawn-by (.-value (.getElementById js/document
+                                                            "title-block-drawn-by"))
+                        :checked-by (.-value (.getElementById js/document
+                                                              "title-block-checked-by"))
+                        :status :preliminary})
+          viewports (family/layout-sheet-viewports
+                     view-ids {:paper-width paper-width :paper-height paper-height
+                               :columns 2 :title-block-height 55
+                               :scale (:print-setting/scale setting)})
+          sheet (family/drawing-sheet
+                 {:id "A-001" :number "A-001" :name "General Arrangements"
+                  :size paper-size :viewports viewports :title-block title-block
+                  :revisions [{:revision "P01" :status :preliminary}]})
+          drawing-set (assoc generated :drawing/sheets [sheet])]
+      (swap! state assoc :drawing-set drawing-set :save-status :dirty)
+      (set! (.-textContent (.getElementById js/document "drawing-set-status"))
+            (str (count (:drawing/views drawing-set)) " views · "
+                 (count (:drawing/schedules drawing-set)) " schedules · A-001 ready")))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "drawing-set-status"))
+            (str "Drawing set error: " (.-message error))))))
 (defn- parse-material-layers [id]
   (mapv (fn [spec]
           (let [parts (mapv string/trim (string/split spec #":"))
@@ -1003,10 +1043,11 @@
 (def ^:private backup-key "kami.bim-editor.project.backup")
 (defn- project-document []
   (let [{:keys [project-id project-name project active-storey selected azimuth elevation
-                camera-target camera-distance profile drawing-views print-setting]} @state]
+                camera-target camera-distance profile drawing-views drawing-set print-setting]} @state]
     (project/document {:id project-id :name project-name :building-model project
                        :family-catalog (:family-catalog @state)
                        :drawings drawing-views
+                       :drawing-set drawing-set
                        :print-setting print-setting
                        :editor {:active-storey active-storey :selected selected
                                 :selection (vec (selection-ids))}
@@ -1037,6 +1078,7 @@
            (update (initial-family-catalog) :family-catalog/families merge
                    (get-in p [:project/family-catalog :family-catalog/families] {}))
            :drawing-views (:project/drawings p)
+           :drawing-set (:project/drawing-set p)
            :print-setting (if (seq (:project/print-setting p))
                             (:project/print-setting p)
                             (family/print-setting {:id :default :paper-size :a1
@@ -1092,6 +1134,27 @@
 (defn- download-ifc! []
   (download-text! "building.ifc" "application/x-step"
                   (ifc/write-spf (integration/coordinated-ifc (:project @state)))))
+(defn- drawing-set-view-graphic [model drawing-set view-id]
+  (let [view (first (filter #(= view-id (:view/id %)) (:drawing/views drawing-set)))
+        schedule (first (filter #(= view-id (:schedule/id %))
+                                (:drawing/schedules drawing-set)))]
+    (cond
+      schedule (drawing/schedule-table schedule)
+      (= :floor-plan (:view/kind view))
+      (when-let [storey (bim/find-storey model (:view/storey-id view))]
+        (drawing/documented-floor-plan
+         storey {:annotations (:view/annotations view)
+                 :view-range (:view/view-range view)}))
+      (contains? #{:section :elevation} (:view/kind view))
+      (when-let [building (or (bim/find-building model (:view/building-id view))
+                              (some-> model :sites first :buildings first))]
+        (drawing/orthographic-view
+         building {:kind (:view/kind view)
+                   :axis (or (get-in view [:view/cut-plane :axis]) :x)
+                   :cut-position (or (get-in view [:view/cut-plane :position]) 0.0)
+                   :depth 1000.0 :scale (or (:view/scale view) 100)
+                   :title (:view/name view)}))
+      :else nil)))
 (defn- download-drawing! []
   (let [model (:project @state)
         storey (bim/find-storey model (:active-storey @state))
@@ -1116,14 +1179,30 @@
                       (drawing/orthographic-view-svg building {:kind :elevation :axis :x
                                                                :cut-position 0.0
                                                                :title "North Elevation"})]
-          :sheet ["sheet-A-001.svg"
-                  (drawing/drawing-sheet-svg
-                   {:number "A-001" :name "General Arrangements" :size :a1 :revision "P01"
-                    :print-setting (:print-setting @state)
-                    :viewports [{:view plan :x 20 :y 20 :width 380 :height 260
-                                 :title (:name storey) :scale 100}
-                                {:view section :x 430 :y 20 :width 380 :height 260
-                                 :title "Section A" :scale 50}]})]
+          :sheet
+          (if-let [semantic-sheet (first (get-in @state [:drawing-set :drawing/sheets]))]
+            ["sheet-A-001.svg"
+             (drawing/drawing-sheet-svg
+              {:number (:sheet/number semantic-sheet) :name (:sheet/name semantic-sheet)
+               :size (:sheet/size semantic-sheet) :revision "P01"
+               :title-block (:sheet/title-block semantic-sheet)
+               :print-setting (:print-setting @state)
+               :viewports
+               (mapv (fn [viewport]
+                       {:view (drawing-set-view-graphic model (:drawing-set @state)
+                                                        (:viewport/view-id viewport))
+                        :x (:viewport/x viewport) :y (:viewport/y viewport)
+                        :width (:viewport/width viewport) :height (:viewport/height viewport)
+                        :title (:viewport/title viewport) :scale (:viewport/scale viewport)})
+                     (:sheet/viewports semantic-sheet))})]
+            ["sheet-A-001.svg"
+             (drawing/drawing-sheet-svg
+              {:number "A-001" :name "General Arrangements" :size :a1 :revision "P01"
+               :print-setting (:print-setting @state)
+               :viewports [{:view plan :x 20 :y 20 :width 380 :height 260
+                            :title (:name storey) :scale 100}
+                           {:view section :x 430 :y 20 :width 380 :height 260
+                            :title "Section A" :scale 50}]})])
           [(str "floor-plan-" (:id storey) ".svg")
            (drawing/documented-floor-plan-svg storey view-options)])]
     (case format
@@ -1237,6 +1316,8 @@
                     apply-view-range!)
  (.addEventListener (.getElementById js/document "apply-print-setting") "click"
                     apply-print-setting!)
+ (.addEventListener (.getElementById js/document "generate-drawing-set") "click"
+                    generate-drawing-set!)
  (.addEventListener (.getElementById js/document "family-definition") "change" refresh-family-types!)
  (refresh-family-definitions!)
  (refresh-annotation-families!)
