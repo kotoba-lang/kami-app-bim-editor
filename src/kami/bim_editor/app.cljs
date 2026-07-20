@@ -191,18 +191,21 @@
   (some (fn [storey]
           (when (some #(= element-id (:id %)) (:elements storey)) (:id storey)))
         (storeys)))
-(defn- pick-at! [canvas client-x client-y]
+(defn- viewport-ray-at [canvas client-x client-y]
   (let [rect (.getBoundingClientRect canvas)
         x (- (* 2.0 (/ (- client-x (.-left rect)) (.-width rect))) 1.0)
         y (- 1.0 (* 2.0 (/ (- client-y (.-top rect)) (.-height rect))))
-        {:keys [eye target]} (camera-state)
-        ray (interaction/camera-ray {:eye eye :target target
-                                     :aspect (/ (.-width rect) (max 1.0 (.-height rect)))} x y)]
-    (if-let [hit (interaction/pick-element (all-elements) ray)]
+        {:keys [eye target]} (camera-state)]
+    (interaction/camera-ray {:eye eye :target target
+                             :aspect (/ (.-width rect) (max 1.0 (.-height rect)))} x y)))
+(defn- hit-at [canvas client-x client-y]
+  (interaction/pick-element (all-elements) (viewport-ray-at canvas client-x client-y)))
+(defn- pick-at! [canvas client-x client-y]
+  (if-let [hit (hit-at canvas client-x client-y)]
       (let [element-id (:element/id hit)]
         (swap! state assoc :selected element-id :active-storey (element-storey-id element-id))
         (refresh!))
-      (do (swap! state assoc :selected nil) (refresh!)))))
+      (do (swap! state assoc :selected nil) (refresh!))))
 (defn- frame-selected! []
   (when-let [bounds (some-> (selected) interaction/element-bounds)]
     (let [frame (interaction/frame-bounds bounds)]
@@ -403,6 +406,28 @@
                   :else (swap! state assoc :shortcut-buffer key))))
         :else (when-let [command (get-in profile-shortcuts [profile key])]
                 (.preventDefault event) (.click (.getElementById js/document command)))))))
+(defn- show-drag-measure! [delta evidence]
+  (let [[dx dy dz] delta
+        length (js/Math.hypot dx dy dz)
+        overlay (.getElementById js/document "drag-measure")]
+    (set! (.-display (.-style overlay)) "block")
+    (set! (.-textContent overlay)
+          (str "Δ " (.toFixed length 3) " m · X " (.toFixed dx 3)
+               " · Y " (.toFixed dy 3) " · Z " (.toFixed dz 3)
+               (when evidence (str " · " (name (:snap/kind evidence))))))))
+(defn- hide-drag-measure! []
+  (set! (.-display (.-style (.getElementById js/document "drag-measure"))) "none"))
+(defn- show-snap-marker! [canvas client-x client-y evidence]
+  (let [marker (.getElementById js/document "snap-marker")]
+    (if evidence
+      (let [rect (.getBoundingClientRect canvas)]
+        (set! (.-display (.-style marker)) "block")
+        (set! (.-left (.-style marker)) (str (- client-x (.-left rect)) "px"))
+        (set! (.-top (.-style marker)) (str (- client-y (.-top rect)) "px"))
+        (set! (.-title marker) (name (:snap/kind evidence))))
+      (set! (.-display (.-style marker)) "none"))))
+(defn- hide-snap-marker! []
+  (set! (.-display (.-style (.getElementById js/document "snap-marker"))) "none"))
 (defn ^:export init! [] (let [canvas (.getElementById js/document "gpu-canvas") drag (atom nil)]
  (-> (gpu/init-canvas! canvas) (.then (fn [v] (reset! viewport v) (refresh!) (set! (.-textContent (.getElementById js/document "gpu-status")) "") (draw!))))
  (.addEventListener (.getElementById js/document "profile") "change"
@@ -411,7 +436,14 @@
                                (case (:profile @state) :archicad "W Wall · D Door · N Window · L Level · F Floor"
                                      :vectorworks "2 Wall · D Door · W Window · L Layer · F Floor"
                                      "WA Wall · DR Door · WN Window · LL Level · FL Floor")) (refresh!)))
- (.addEventListener js/window "keydown" invoke-shortcut!)
+ (.addEventListener js/window "keydown"
+                    (fn [event]
+                      (if (and (= "Escape" (.-key event)) @drag)
+                        (do (.preventDefault event)
+                            (when-let [project (:original-project @drag)]
+                              (swap! state interaction/cancel-drag-state project))
+                            (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!) (refresh!))
+                        (invoke-shortcut! event))))
  (.addEventListener (.getElementById js/document "analyze-structure") "click" analyze-structure!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "family-definition") "change" refresh-family-types!)
@@ -550,27 +582,78 @@
  (.addEventListener (.getElementById js/document "undo") "click" #(when-let [p (peek (:history @state))] (swap! state (fn [s] (assoc s :project p :history (pop (:history s)) :future (conj (:future s) (:project s))))) (refresh!)))
  (.addEventListener (.getElementById js/document "redo") "click" (fn [] (when-let [p (peek (:future @state))] (swap! state (fn [s] (assoc s :project p :future (pop (:future s)) :history (conj (:history s) (:project s))))) (refresh!))))
  (.addEventListener canvas "pointerdown"
-                    #(reset! drag {:start [(.-clientX %) (.-clientY %)]
-                                   :last [(.-clientX %) (.-clientY %)] :moved? false}))
+                    (fn [event]
+                      (let [client-x (.-clientX event) client-y (.-clientY event)
+                            tool (keyword (.-value (.getElementById js/document "viewport-tool")))]
+                        (if (= :move tool)
+                          (if-let [hit (hit-at canvas client-x client-y)]
+                            (let [element (:element hit) element-id (:element/id hit)
+                                  bounds (:pick/bounds hit)
+                                  plane-z (/ (+ (get-in bounds [:min 2])
+                                                (get-in bounds [:max 2])) 2.0)
+                                  plane {:plane/origin [0.0 0.0 plane-z]
+                                         :plane/normal [0.0 0.0 1.0]}
+                                  ray (viewport-ray-at canvas client-x client-y)]
+                              (swap! state assoc :selected element-id
+                                     :active-storey (element-storey-id element-id))
+                              (if (interaction/ray-plane-point ray plane)
+                                (reset! drag {:mode :move :start [client-x client-y]
+                                              :moved? false :start-ray ray :plane plane
+                                              :element element :element-id element-id
+                                              :storey-id (element-storey-id element-id)
+                                              :original-project (:project @state)})
+                                (reset! drag nil))
+                              (refresh!))
+                            (do (swap! state assoc :selected nil) (refresh!)))
+                          (reset! drag {:mode :orbit :start [client-x client-y]
+                                        :last [client-x client-y] :moved? false})))))
  (.addEventListener js/window "pointerup"
                     (fn [_]
-                      (when-let [{:keys [start moved?]} @drag]
-                        (when-not moved? (pick-at! canvas (first start) (second start))))
-                      (reset! drag nil)))
+                      (when-let [{:keys [mode start moved? original-project]} @drag]
+                        (case mode
+                          :orbit (when-not moved?
+                                   (pick-at! canvas (first start) (second start)))
+                          :move (when moved?
+                                  (swap! state interaction/commit-drag-state original-project)
+                                  (refresh!))))
+                      (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!)))
  (.addEventListener canvas "dblclick" (fn [event] (.preventDefault event) (frame-selected!)))
  (.addEventListener js/window "pointermove"
                     (fn [e]
-                      (when-let [{[x y] :last [start-x start-y] :start
-                                  already-moved? :moved?} @drag]
-                        (let [client-x (.-clientX e) client-y (.-clientY e)
-                              moved? (> (js/Math.hypot (- client-x start-x)
-                                                       (- client-y start-y)) 3.0)]
-                          (swap! state update :azimuth + (* 0.008 (- client-x x)))
-                          (swap! state update :elevation
-                                 (fn [v] (max -1.2 (min 1.2
-                                                       (+ v (* 0.008 (- client-y y)))))))
-                          (swap! drag assoc :last [client-x client-y]
-                                 :moved? (or already-moved? moved?))))))
+                      (when-let [{:keys [mode start moved? start-ray plane element element-id
+                                         storey-id original-project]
+                                  [x y] :last} @drag]
+                        (let [[start-x start-y] start
+                              client-x (.-clientX e) client-y (.-clientY e)
+                              passed-threshold? (> (js/Math.hypot (- client-x start-x)
+                                                                  (- client-y start-y)) 3.0)]
+                          (case mode
+                            :orbit
+                            (do (swap! state update :azimuth + (* 0.008 (- client-x x)))
+                                (swap! state update :elevation
+                                       (fn [v] (max -1.2 (min 1.2
+                                                             (+ v (* 0.008 (- client-y y)))))))
+                                (swap! drag assoc :last [client-x client-y]
+                                       :moved? (or moved? passed-threshold?)))
+                            :move
+                            (when passed-threshold?
+                              (when-let [motion (interaction/drag-delta
+                                                 start-ray
+                                                 (viewport-ray-at canvas client-x client-y)
+                                                 plane)]
+                                (let [delta (snap-delta element (:drag/delta motion))
+                                      preview (bim/update-element original-project storey-id element-id
+                                                                  bim/translate-element delta)]
+                                  (swap! state assoc :project preview)
+                                  (swap! drag assoc :moved? true :delta delta)
+                                  (show-drag-measure! delta (:last-snap @state))
+                                  (show-snap-marker! canvas client-x client-y (:last-snap @state))
+                                  (refresh!)))))))))
+ (.addEventListener js/window "pointercancel"
+                    (fn [_]
+                      (when-let [project (:original-project @drag)]
+                        (swap! state interaction/cancel-drag-state project))
+                      (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!) (refresh!)))
  (.addEventListener (.getElementById js/document "save-project") "click" save-project!)
  (.addEventListener (.getElementById js/document "load-project") "click" load-project!)
  (.addEventListener (.getElementById js/document "import") "click" #(.click (.getElementById js/document "import-file")))

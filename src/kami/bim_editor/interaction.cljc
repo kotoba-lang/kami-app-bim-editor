@@ -59,6 +59,40 @@
             (when (>= next-far next-near)
               (recur (inc axis) next-near next-far))))))))
 
+(defn ray-plane-point
+  "Intersect a ray with a plane. Returns nil for parallel or behind-camera hits."
+  [ray plane]
+  (let [ray-origin (:ray/origin ray) direction (:ray/direction ray)
+        plane-origin (:plane/origin plane) normal (:plane/normal plane)]
+  (when-not (and (= 3 (count ray-origin)) (= 3 (count direction))
+                 (= 3 (count plane-origin)) (= 3 (count normal)))
+    (throw (ex-info "ray and plane must use 3D vectors" {})))
+  (let [denominator (dot direction normal)]
+    (when (> (#?(:clj Math/abs :cljs js/Math.abs) denominator) 1.0e-12)
+      (let [distance (/ (dot (subtract plane-origin ray-origin) normal) denominator)]
+        (when (not (neg? distance))
+          (add ray-origin (scale distance direction))))))))
+
+(defn drag-delta
+  "Return the world-space displacement between two ray hits on one plane."
+  [start-ray current-ray plane]
+  (when-let [start (ray-plane-point start-ray plane)]
+    (when-let [current (ray-plane-point current-ray plane)]
+      {:drag/start start :drag/current current :drag/delta (subtract current start)})))
+
+(defn commit-drag-state
+  "Commit an already-previewed project as one undoable editor revision."
+  [state original-project]
+  (-> state
+      (update :history conj original-project)
+      (assoc :future [] :save-status :dirty)
+      (update :revision (fnil inc 0))))
+
+(defn cancel-drag-state
+  "Restore the project snapshot captured when a drag began."
+  [state original-project]
+  (assoc state :project original-project :last-snap nil))
+
 (defn element-bounds [element]
   (when-let [mesh (bim/element-mesh element)]
     (when (seq (:positions mesh))
