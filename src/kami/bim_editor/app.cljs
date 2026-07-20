@@ -26,7 +26,8 @@
                             :depth [:param :height]}
                  :quantities {:gross-volume-m3 [:param :volume]}
                  :psets {} :openings [] :connected-to []}})]))
-(defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
+(defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :selection #{10}
+                      :next-id 14 :next-storey-id 4
                       :selected-space nil :next-space-id 1000
                       :selected-clash nil :family-catalog (initial-family-catalog)
                       :history [] :future [] :azimuth 0.75 :elevation 0.5 :last-snap nil
@@ -40,7 +41,17 @@
 (defn- all-elements [] (mapcat :elements (storeys)))
 (defn- spaces [] (:spaces (bim/find-storey (:project @state) (:active-storey @state))))
 (defn- all-spaces [] (mapcat :spaces (storeys)))
-(defn- selected [] (first (filter #(= (:selected @state) (:id %)) (elements))))
+(defn- selection-ids [] (set (:selection @state)))
+(defn- selected-elements [] (filterv #(contains? (selection-ids) (:id %)) (all-elements)))
+(defn- selected [] (first (filter #(= (:selected @state) (:id %)) (all-elements))))
+(defn- select-only! [element-id]
+  (swap! state assoc :selected element-id :selection (if element-id #{element-id} #{})))
+(defn- apply-selection! [result]
+  (swap! state assoc :selected (:primary result) :selection (:selection result)))
+(defn- selection-mode [event]
+  (cond (or (.-metaKey event) (.-ctrlKey event)) :toggle
+        (.-shiftKey event) :add
+        :else :replace))
 (defn- selected-family []
   (get-in @state [:family-catalog :family-catalog/families
                   (.-value (.getElementById js/document "family-definition"))]))
@@ -80,7 +91,7 @@
                                             " · V " (format-quantity (:net-volume row))))
         (.addEventListener line "click" #(do (swap! state assoc :active-storey
                                                      (:id (first (filter (fn [s] (= (:name s) (:storey row))) (storeys))))
-                                                :selected (:id row)) (refresh!)))
+                                                :selected (:id row) :selection #{(:id row)}) (refresh!)))
         (.appendChild container line)))))
 (defn- csv-cell [value] (str "\"" (.replaceAll (str (or value "")) "\"" "\"\"") "\""))
 (defn- schedule-csv []
@@ -104,7 +115,8 @@
                                              " · " (.toFixed (:clash/volume result) 4) " m³"))
           (when (= index (:selected-clash @state)) (.add (.-classList button) "selected"))
           (.addEventListener button "click" #(do (swap! state assoc :selected-clash index :active-storey (:clash/storey result)
-                                                        :selected (:clash/a result)) (refresh!)))
+                                                        :selected (:clash/a result)
+                                                        :selection #{(:clash/a result)}) (refresh!)))
           (.appendChild container button))))))
 (defn- download-clashes! []
   (let [rows (clashes) data (str "storey,element_a,element_b,kind_a,kind_b,overlap_x,overlap_y,overlap_z,volume_m3\n"
@@ -118,7 +130,7 @@
           draws (mapv (fn [{:keys [element/id mesh color]}]
                         {:element/id id :buffers (gpu/upload-mesh! (:mesh-context v) mesh)
                          :color color})
-                      (interaction/element-render-items (all-elements) (:selected @state)))]
+                      (interaction/element-render-items (all-elements) (selection-ids)))]
       (swap! viewport assoc :draws draws)
       (set! (.-textContent (.getElementById js/document "stats")) (str (count (storeys)) " storeys · " (count (all-elements)) " elements · " (/ (count (:indices m)) 3) " triangles"))
       (set! (.-textContent (.getElementById js/document "debug-state"))
@@ -130,7 +142,8 @@
                                          :openingCount (reduce + (map #(count (:openings %)) (filter #(= :wall (:kind %)) (all-elements))))
                                          :scheduleRows (count (element-rows))
                                          :grossVolume (reduce + 0 (keep #(get-in % [:quantities :gross-volume-m3]) (all-elements)))
-                                         :selected (:selected @state) :profile (name (:profile @state))
+                                         :selected (:selected @state) :selection (vec (selection-ids))
+                                         :profile (name (:profile @state))
                                          :projectVersion project/current-version :revision (:revision @state) :saveStatus (name (:save-status @state))
                                          :clashCount (count (clashes)) :selectedClash (:selected-clash @state)
                                          :shortcutBuffer (:shortcut-buffer @state)})))))
@@ -140,15 +153,21 @@
       (let [b (.createElement js/document "button")]
         (set! (.-textContent b) (str (:name storey) " · " (.toFixed (:elevation storey) 2) " m"))
         (when (= (:id storey) (:active-storey @state)) (.add (.-classList b) "selected"))
-        (.addEventListener b "click" #(do (swap! state assoc :active-storey (:id storey) :selected (some-> (first (:elements storey)) :id)) (refresh!)))
+        (.addEventListener b "click" #(do (swap! state assoc :active-storey (:id storey))
+                                           (select-only! (some-> (first (:elements storey)) :id))
+                                           (refresh!)))
         (.appendChild levels b))))
   (let [tree (.getElementById js/document "tree")]
     (set! (.-innerHTML tree) "")
     (doseq [e (elements)]
       (let [b (.createElement js/document "button") icon ({:wall "▱" :door "▯" :window "▦"} (:kind e) "◇")]
         (set! (.-textContent b) (str icon " " (:name e)))
-        (when (= (:id e) (:selected @state)) (.add (.-classList b) "selected"))
-        (.addEventListener b "click" #(do (swap! state assoc :selected (:id e)) (refresh!)))
+        (when (contains? (selection-ids) (:id e)) (.add (.-classList b) "selected"))
+        (.addEventListener b "click" (fn [event]
+                                        (apply-selection!
+                                         (interaction/selection-after-click
+                                          (selection-ids) (:id e) (selection-mode event)))
+                                        (refresh!)))
         (.appendChild tree b))))
   (let [rooms (.getElementById js/document "rooms")]
     (set! (.-innerHTML rooms) "")
@@ -191,21 +210,26 @@
   (some (fn [storey]
           (when (some #(= element-id (:id %)) (:elements storey)) (:id storey)))
         (storeys)))
-(defn- viewport-ray-at [canvas client-x client-y]
+(defn- viewport-ndc-at [canvas client-x client-y]
   (let [rect (.getBoundingClientRect canvas)
         x (- (* 2.0 (/ (- client-x (.-left rect)) (.-width rect))) 1.0)
-        y (- 1.0 (* 2.0 (/ (- client-y (.-top rect)) (.-height rect))))
+        y (- 1.0 (* 2.0 (/ (- client-y (.-top rect)) (.-height rect))))]
+    [x y]))
+(defn- viewport-ray-at [canvas client-x client-y]
+  (let [[x y] (viewport-ndc-at canvas client-x client-y)
+        rect (.getBoundingClientRect canvas)
         {:keys [eye target]} (camera-state)]
     (interaction/camera-ray {:eye eye :target target
                              :aspect (/ (.-width rect) (max 1.0 (.-height rect)))} x y)))
 (defn- hit-at [canvas client-x client-y]
   (interaction/pick-element (all-elements) (viewport-ray-at canvas client-x client-y)))
-(defn- pick-at! [canvas client-x client-y]
+(defn- pick-at! [canvas client-x client-y mode]
   (if-let [hit (hit-at canvas client-x client-y)]
       (let [element-id (:element/id hit)]
-        (swap! state assoc :selected element-id :active-storey (element-storey-id element-id))
+        (apply-selection! (interaction/selection-after-click (selection-ids) element-id mode))
+        (swap! state assoc :active-storey (element-storey-id element-id))
         (refresh!))
-      (do (swap! state assoc :selected nil) (refresh!))))
+      (do (when (= :replace mode) (select-only! nil)) (refresh!))))
 (defn- frame-selected! []
   (when-let [bounds (some-> (selected) interaction/element-bounds)]
     (let [frame (interaction/frame-bounds bounds)]
@@ -213,11 +237,12 @@
              :camera-distance (:camera/distance frame))
       (refresh!))))
 (defn- num [id] (js/parseFloat (.-value (.getElementById js/document id))))
-(defn- snap-delta [element delta]
-  (let [enabled? (.-checked (.getElementById js/document "snap-enabled"))
-        source (editor/model-snap-candidates [element])
+(defn- snap-delta [elements delta]
+  (let [elements (vec elements) selected-ids (set (map :id elements))
+        enabled? (.-checked (.getElementById js/document "snap-enabled"))
+        source (editor/model-snap-candidates elements)
         targets (editor/model-snap-candidates
-                 (remove #(= (:id element) (:id %)) (all-elements)))
+                 (remove #(contains? selected-ids (:id %)) (all-elements)))
         evidence (when enabled?
                    (editor/snap-translation
                     source targets delta
@@ -230,6 +255,11 @@
                  (.toFixed (:snap/distance evidence) 3) " m")
             (if enabled? "No snap in tolerance" "Snapping disabled")))
     (or (:snap/delta evidence) delta)))
+(defn- transform-project [project elements transform & args]
+  (reduce (fn [current element]
+            (apply bim/update-element current (element-storey-id (:id element))
+                   (:id element) transform args))
+          project elements))
 (defn- parse-point [id]
   (mapv #(js/parseFloat (.trim %))
         (string/split (.-value (.getElementById js/document id)) #",")))
@@ -272,7 +302,7 @@
             project (reduce #(bim/add-element %1 (:active-storey @state) %2)
                             (:project @state) segments)]
         (swap! state update :next-id + (count segments))
-        (swap! state assoc :selected (:id (first segments)))
+        (select-only! (:id (first segments)))
         (set! (.-textContent (.getElementById js/document "engineering-status"))
               (str (count segments) " routed segments"))
         (commit! project)))))
@@ -296,7 +326,8 @@
                 camera-target camera-distance profile]} @state]
     (project/document {:id project-id :name project-name :building-model project
                        :family-catalog (:family-catalog @state)
-                       :editor {:active-storey active-storey :selected selected}
+                       :editor {:active-storey active-storey :selected selected
+                                :selection (vec (selection-ids))}
                        :camera {:azimuth azimuth :elevation elevation :target camera-target
                                 :distance camera-distance}
                        :interaction {:profile profile}})))
@@ -311,7 +342,10 @@
         space-ids (map :id (mapcat :spaces (mapcat :storeys (mapcat :buildings (:sites model)))))
         storey-ids (map :id (mapcat :storeys (mapcat :buildings (:sites model))))]
     (swap! state assoc :project-id (:project/id p) :project-name (:project/name p) :project model
-           :active-storey (:active-storey editor) :selected (:selected editor) :azimuth (:azimuth camera)
+           :active-storey (:active-storey editor) :selected (:selected editor)
+           :selection (set (or (:selection editor)
+                               (when-let [selected (:selected editor)] [selected])))
+           :azimuth (:azimuth camera)
            :elevation (:elevation camera)
            :camera-target (or (:target camera) [4.0 1.5 3.0])
            :camera-distance (or (:distance camera) 14.0)
@@ -428,6 +462,17 @@
       (set! (.-display (.-style marker)) "none"))))
 (defn- hide-snap-marker! []
   (set! (.-display (.-style (.getElementById js/document "snap-marker"))) "none"))
+(defn- show-selection-box! [canvas [start-x start-y] [current-x current-y]]
+  (let [rect (.getBoundingClientRect canvas) box (.getElementById js/document "selection-box")
+        left (- (min start-x current-x) (.-left rect))
+        top (- (min start-y current-y) (.-top rect))]
+    (set! (.-display (.-style box)) "block")
+    (set! (.-left (.-style box)) (str left "px"))
+    (set! (.-top (.-style box)) (str top "px"))
+    (set! (.-width (.-style box)) (str (js/Math.abs (- current-x start-x)) "px"))
+    (set! (.-height (.-style box)) (str (js/Math.abs (- current-y start-y)) "px"))))
+(defn- hide-selection-box! []
+  (set! (.-display (.-style (.getElementById js/document "selection-box"))) "none"))
 (defn ^:export init! [] (let [canvas (.getElementById js/document "gpu-canvas") drag (atom nil)]
  (-> (gpu/init-canvas! canvas) (.then (fn [v] (reset! viewport v) (refresh!) (set! (.-textContent (.getElementById js/document "gpu-status")) "") (draw!))))
  (.addEventListener (.getElementById js/document "profile") "change"
@@ -442,7 +487,8 @@
                         (do (.preventDefault event)
                             (when-let [project (:original-project @drag)]
                               (swap! state interaction/cancel-drag-state project))
-                            (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!) (refresh!))
+                            (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!)
+                            (hide-selection-box!) (refresh!))
                         (invoke-shortcut! event))))
  (.addEventListener (.getElementById js/document "analyze-structure") "click" analyze-structure!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
@@ -456,24 +502,25 @@
                                      (:family-catalog @state) family-id type-key id
                                      {:depth (num "family-depth") :height (num "family-height")})]
                        (swap! state update :next-id inc)
-                       (swap! state assoc :selected id)
+                       (select-only! id)
                        (commit! (bim/add-element (:project @state) (:active-storey @state) instance))))
  (.addEventListener (.getElementById js/document "add-wall") "click" #(let [id (:next-id @state) storey-id (:active-storey @state)
                                                                                   z (:elevation (bim/find-storey (:project @state) storey-id))
                                                                                   y (+ 7 (- id 14)) w (wall id [0 y z] [4 y z])]
-                                                                              (swap! state update :next-id inc) (swap! state assoc :selected id)
+                                                                              (swap! state update :next-id inc) (select-only! id)
                                                                               (commit! (bim/add-element (:project @state) storey-id w))))
  (.addEventListener (.getElementById js/document "add-level") "click"
                     #(let [id (:next-storey-id @state) elevation (+ 3.2 (reduce max 0 (map :elevation (storeys))))
                            level (bim/storey {:id id :name (str "Level " (dec id)) :elevation elevation
                                               :height 3.2 :placement :identity :spaces [] :elements []})]
-                       (swap! state assoc :next-storey-id (inc id) :active-storey id :selected nil)
+                       (swap! state assoc :next-storey-id (inc id) :active-storey id
+                              :selected nil :selection #{})
                        (commit! (bim/add-storey (:project @state) 2 level))))
  (.addEventListener (.getElementById js/document "add-slab") "click"
                     #(let [id (:next-id @state) storey (bim/find-storey (:project @state) (:active-storey @state)) z (:elevation storey)
                            slab (bim/slab {:id id :name (str "Floor " (:name storey))
                                            :boundary [[0 0 z] [8 0 z] [8 6 z] [0 6 z]] :thickness 0.25})]
-                       (swap! state assoc :next-id (inc id) :selected id)
+                       (swap! state assoc :next-id (inc id) :selected id :selection #{id})
                        (commit! (bim/add-element (:project @state) (:active-storey @state) slab))))
  (.addEventListener (.getElementById js/document "add-room") "click"
                     #(let [id (:next-space-id @state) storey (bim/find-storey (:project @state) (:active-storey @state))
@@ -509,39 +556,47 @@
                                        (bim/update-element storey-id (:id host) (constantly hosted))
                                        (bim/add-element storey-id fill))]
                              (swap! state update :next-id inc)
-                             (swap! state assoc :selected id)
+                             (select-only! id)
                              (commit! p))))))
  (.addEventListener (.getElementById js/document "apply") "click" #(when-let [e (selected)] (let [[[x y z] _] (get-in e [:geometry :axis]) len (num "length") updated (bim/wall {:id (:id e) :name (.-value (.getElementById js/document "name")) :start [x y z] :end [(+ x len) y z] :height (num "height") :thickness (num "thickness") :material (.-value (.getElementById js/document "material"))})] (commit! (bim/update-element (:project @state) (:active-storey @state) (:id e) (constantly updated))))))
  (.addEventListener (.getElementById js/document "move-element") "click"
-                    #(when-let [e (selected)]
-                       (when (bim/element-mesh e)
-                         (let [delta [(num "move-x") (num "move-y") (num "move-z")]]
-                           (commit! (bim/update-element (:project @state) (:active-storey @state)
-                                                        (:id e) bim/translate-element
-                                                        (snap-delta e delta)))))))
+                    #(let [chosen (filterv bim/element-mesh (selected-elements))]
+                       (when (seq chosen)
+                         (let [delta (snap-delta chosen
+                                                 [(num "move-x") (num "move-y") (num "move-z")])]
+                           (commit! (transform-project (:project @state) chosen
+                                                       bim/translate-element delta))))))
  (.addEventListener (.getElementById js/document "copy-element") "click"
-                    #(when-let [e (selected)]
-                       (when (bim/element-mesh e)
-                         (let [id (:next-id @state)
-                               delta (snap-delta e [(num "move-x") (num "move-y") (num "move-z")])
-                               copy (bim/duplicate-element e id delta)
-                               p (bim/add-element (:project @state) (:active-storey @state) copy)]
-                           (swap! state assoc :next-id (inc id) :selected id)
+                    #(let [chosen (filterv bim/element-mesh (selected-elements))]
+                       (when (seq chosen)
+                         (let [start-id (:next-id @state)
+                               delta (snap-delta chosen
+                                                 [(num "move-x") (num "move-y") (num "move-z")])
+                               copies (mapv (fn [offset element]
+                                              (bim/duplicate-element element (+ start-id offset) delta))
+                                            (range) chosen)
+                               p (reduce (fn [project [source copy]]
+                                           (bim/add-element project
+                                                            (element-storey-id (:id source)) copy))
+                                         (:project @state) (map vector chosen copies))
+                               ids (set (map :id copies))]
+                           (swap! state assoc :next-id (+ start-id (count copies))
+                                  :selected (:id (first copies)) :selection ids)
                            (commit! p)))))
  (.addEventListener (.getElementById js/document "rotate-element") "click"
-                    #(when-let [e (selected)]
-                       (when (bim/element-mesh e)
+                    #(let [chosen (filterv bim/element-mesh (selected-elements))]
+                       (when (seq chosen)
                          (let [pivot [(num "pivot-x") (num "pivot-y") (num "pivot-z")]
                                angle (* (num "transform-angle") (/ js/Math.PI 180.0))]
-                           (commit! (bim/update-element (:project @state) (:active-storey @state)
-                                                        (:id e) bim/rotate-element-z pivot angle))))))
+                           (commit! (transform-project (:project @state) chosen
+                                                       bim/rotate-element-z pivot angle))))))
  (.addEventListener (.getElementById js/document "mirror-element") "click"
-                    #(when-let [e (selected)]
-                       (when (bim/element-mesh e)
+                    #(let [chosen (filterv bim/element-mesh (selected-elements))]
+                       (when (seq chosen)
                          (let [origin [(num "pivot-x") (num "pivot-y") (num "pivot-z")]
                                normal [(num "mirror-x") (num "mirror-y") (num "mirror-z")]]
-                           (commit! (bim/update-element (:project @state) (:active-storey @state)
-                                                        (:id e) bim/mirror-element origin normal))))))
+                           (commit! (transform-project (:project @state) chosen
+                                                       bim/mirror-element origin normal))))))
  (.addEventListener (.getElementById js/document "array-element") "click"
                     #(when-let [e (selected)]
                        (when (bim/element-mesh e)
@@ -560,13 +615,14 @@
                                              (* (num "transform-angle") (/ js/Math.PI 180.0)))
                                             (bim/linear-array
                                              e identities
-                                             (snap-delta e [(num "move-x") (num "move-y")
-                                                            (num "move-z")])))
+                                             (snap-delta [e] [(num "move-x") (num "move-y")
+                                                              (num "move-z")])))
                                    p (reduce (fn [project copy]
                                                (bim/add-element project (:active-storey @state) copy))
                                              (:project @state) copies)]
                                (swap! state assoc :next-id (+ start-id count-value)
-                                      :selected (:id (first copies)))
+                                      :selected (:id (first copies))
+                                      :selection (set (map :id copies)))
                                (commit! p)))))))
  (.addEventListener (.getElementById js/document "delete") "click"
                     #(when-let [e (selected)]
@@ -577,15 +633,17 @@
                                        (bim/delete-element (:active-storey @state) (:id e))))
                                  (bim/delete-element (:project @state) (:active-storey @state) (:id e)))]
                          (commit! p)
-                         (swap! state assoc :selected (some-> (first (elements)) :id))
+                         (select-only! (some-> (first (elements)) :id))
                          (refresh!))))
  (.addEventListener (.getElementById js/document "undo") "click" #(when-let [p (peek (:history @state))] (swap! state (fn [s] (assoc s :project p :history (pop (:history s)) :future (conj (:future s) (:project s))))) (refresh!)))
  (.addEventListener (.getElementById js/document "redo") "click" (fn [] (when-let [p (peek (:future @state))] (swap! state (fn [s] (assoc s :project p :future (pop (:future s)) :history (conj (:history s) (:project s))))) (refresh!))))
  (.addEventListener canvas "pointerdown"
                     (fn [event]
                       (let [client-x (.-clientX event) client-y (.-clientY event)
-                            tool (keyword (.-value (.getElementById js/document "viewport-tool")))]
-                        (if (= :move tool)
+                            tool (keyword (.-value (.getElementById js/document "viewport-tool")))
+                            mode (selection-mode event)]
+                        (case tool
+                          :move
                           (if-let [hit (hit-at canvas client-x client-y)]
                             (let [element (:element hit) element-id (:element/id hit)
                                   bounds (:pick/bounds hit)
@@ -594,34 +652,66 @@
                                   plane {:plane/origin [0.0 0.0 plane-z]
                                          :plane/normal [0.0 0.0 1.0]}
                                   ray (viewport-ray-at canvas client-x client-y)]
-                              (swap! state assoc :selected element-id
-                                     :active-storey (element-storey-id element-id))
-                              (if (interaction/ray-plane-point ray plane)
-                                (reset! drag {:mode :move :start [client-x client-y]
-                                              :moved? false :start-ray ray :plane plane
-                                              :element element :element-id element-id
-                                              :storey-id (element-storey-id element-id)
-                                              :original-project (:project @state)})
-                                (reset! drag nil))
+                              (if (not= :replace mode)
+                                (do (apply-selection!
+                                     (interaction/selection-after-click
+                                      (selection-ids) element-id mode))
+                                    (reset! drag nil))
+                                (do (when-not (contains? (selection-ids) element-id)
+                                      (select-only! element-id))
+                                    (swap! state assoc :selected element-id
+                                           :active-storey (element-storey-id element-id))
+                                    (if (interaction/ray-plane-point ray plane)
+                                      (reset! drag {:mode :move :start [client-x client-y]
+                                                    :moved? false :start-ray ray :plane plane
+                                                    :elements (selected-elements)
+                                                    :anchor element
+                                                    :original-project (:project @state)})
+                                      (reset! drag nil))))
                               (refresh!))
-                            (do (swap! state assoc :selected nil) (refresh!)))
+                            (do (when (= :replace mode) (select-only! nil)) (refresh!)))
+                          :box
+                          (reset! drag {:mode :box :start [client-x client-y]
+                                        :last [client-x client-y] :moved? false
+                                        :selection-mode mode})
                           (reset! drag {:mode :orbit :start [client-x client-y]
-                                        :last [client-x client-y] :moved? false})))))
+                                        :last [client-x client-y] :moved? false
+                                        :selection-mode mode})))))
  (.addEventListener js/window "pointerup"
                     (fn [_]
-                      (when-let [{:keys [mode start moved? original-project]} @drag]
+                      (when-let [{:keys [mode start moved? original-project selection-mode]} @drag]
                         (case mode
                           :orbit (when-not moved?
-                                   (pick-at! canvas (first start) (second start)))
+                                   (pick-at! canvas (first start) (second start) selection-mode))
+                          :box (when moved?
+                                 (let [[start-x start-y] start
+                                       current (:last @drag)
+                                       [current-x _] current
+                                       a (viewport-ndc-at canvas start-x start-y)
+                                       b (viewport-ndc-at canvas (first current) (second current))
+                                       rect (.getBoundingClientRect canvas)
+                                       {:keys [eye target]} (camera-state)
+                                       ids (interaction/elements-in-screen-rect
+                                            (all-elements)
+                                            {:eye eye :target target
+                                             :aspect (/ (.-width rect)
+                                                        (max 1.0 (.-height rect)))}
+                                            {:min (mapv min a b) :max (mapv max a b)}
+                                            (if (>= current-x start-x) :window :crossing))]
+                                   (apply-selection!
+                                    (interaction/selection-after-box
+                                     (selection-ids) ids selection-mode))
+                                   (refresh!)))
                           :move (when moved?
                                   (swap! state interaction/commit-drag-state original-project)
                                   (refresh!))))
-                      (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!)))
+                      (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!)
+                      (hide-selection-box!)))
  (.addEventListener canvas "dblclick" (fn [event] (.preventDefault event) (frame-selected!)))
  (.addEventListener js/window "pointermove"
                     (fn [e]
-                      (when-let [{:keys [mode start moved? start-ray plane element element-id
-                                         storey-id original-project]
+                      (when-let [{:keys [mode start moved? start-ray plane elements anchor
+                                         original-project]
                                   [x y] :last} @drag]
                         (let [[start-x start-y] start
                               client-x (.-clientX e) client-y (.-clientY e)
@@ -635,15 +725,20 @@
                                                              (+ v (* 0.008 (- client-y y)))))))
                                 (swap! drag assoc :last [client-x client-y]
                                        :moved? (or moved? passed-threshold?)))
+                            :box
+                            (do (swap! drag assoc :last [client-x client-y]
+                                      :moved? (or moved? passed-threshold?))
+                                (when passed-threshold?
+                                  (show-selection-box! canvas start [client-x client-y])))
                             :move
                             (when passed-threshold?
                               (when-let [motion (interaction/drag-delta
                                                  start-ray
                                                  (viewport-ray-at canvas client-x client-y)
                                                  plane)]
-                                (let [delta (snap-delta element (:drag/delta motion))
-                                      preview (bim/update-element original-project storey-id element-id
-                                                                  bim/translate-element delta)]
+                                (let [delta (snap-delta elements (:drag/delta motion))
+                                      preview (transform-project original-project elements
+                                                                 bim/translate-element delta)]
                                   (swap! state assoc :project preview)
                                   (swap! drag assoc :moved? true :delta delta)
                                   (show-drag-measure! delta (:last-snap @state))
@@ -653,7 +748,8 @@
                     (fn [_]
                       (when-let [project (:original-project @drag)]
                         (swap! state interaction/cancel-drag-state project))
-                      (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!) (refresh!)))
+                      (reset! drag nil) (hide-drag-measure!) (hide-snap-marker!)
+                      (hide-selection-box!) (refresh!)))
  (.addEventListener (.getElementById js/document "save-project") "click" save-project!)
  (.addEventListener (.getElementById js/document "load-project") "click" load-project!)
  (.addEventListener (.getElementById js/document "import") "click" #(.click (.getElementById js/document "import-file")))
