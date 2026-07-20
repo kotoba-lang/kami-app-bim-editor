@@ -116,6 +116,25 @@
        [:label "Maximum air velocity (m/s)"
         [:input {:id "duct-max-velocity" :type "number" :min 0.1 :value 6}]]
        [:button {:id "route-duct"} "Size + route rectangular duct"]
+       [:h3 "Electrical panel"]
+       [:label "Panel location" [:input {:id "panel-point" :value "1,1,1.5"}]]
+       [:label "Lighting load (VA)"
+        [:input {:id "panel-load-a" :type "number" :min 1 :value 2300}]]
+       [:label "Lighting run (m)"
+        [:input {:id "panel-length-a" :type "number" :min 0.1 :value 30}]]
+       [:label "Socket load (VA)"
+        [:input {:id "panel-load-b" :type "number" :min 1 :value 1800}]]
+       [:label "Socket run (m)"
+        [:input {:id "panel-length-b" :type "number" :min 0.1 :value 20}]]
+       [:label "Equipment load (VA)"
+        [:input {:id "panel-load-c" :type "number" :min 1 :value 1500}]]
+       [:label "Equipment run (m)"
+        [:input {:id "panel-length-c" :type "number" :min 0.1 :value 15}]]
+       [:label "Demand factor (%)"
+        [:input {:id "panel-demand-factor" :type "number" :min 1 :max 100 :value 80}]]
+       [:label "Main rating (A)"
+        [:input {:id "panel-main-rating" :type "number" :min 1 :value 63}]]
+       [:button {:id "design-electrical-panel"} "Design panel + circuits"]
        [:label "Equipment kind" [:select {:id "mep-equipment-kind"}
                                  [:option {:value "pump"} "Pump"]
                                  [:option {:value "air-terminal"} "Air terminal"]
