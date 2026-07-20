@@ -1,12 +1,32 @@
 (ns kami.bim-editor.app (:require [cljs.reader :as reader] [clojure.string :as string] [bim]
+                                  [bim.integration :as family]
                                   [bim.drawing :as drawing] [ifc.core :as ifc]
                                   [kami.bim-editor.integration :as integration]
                                   [kami.bim-editor.project :as project] [kami.webgpu.mesh :as gpu]))
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
 (defn initial-project [] (let [st (bim/storey {:id 3 :name "Ground Floor" :elevation 0 :height 3.2 :placement :identity :spaces [] :elements []}) p (-> (bim/project "Lodge") (update :sites conj (bim/site {:id 1 :name "Site" :geo nil :placement :identity :buildings [(bim/building {:id 2 :name "Lodge" :placement :identity :reference-elevation 0 :storeys [st]})]})))] (reduce #(bim/add-element %1 3 %2) p [(wall 10 [0 0 0] [8 0 0]) (wall 11 [8 0 0] [8 6 0]) (wall 12 [8 6 0] [0 6 0]) (wall 13 [0 6 0] [0 0 0])])))
+(defn initial-family-catalog []
+  (family/family-catalog
+   [(family/family-definition
+     {:id "casework" :name "Casework" :category :furniture
+      :parameters {:width {:type :length :scope :type :default 0.8 :min 0.3}
+                   :depth {:type :length :scope :instance :default 0.6 :min 0.2}
+                   :height {:type :length :scope :instance :default 0.9 :min 0.2 :max 3.0}}
+      :formulas {:volume [:* [:param :width] [:param :depth] [:param :height]]}
+      :types {:standard {:id "casework-standard" :name "Standard" :parameters {:width 0.8}}
+              :wide {:id "casework-wide" :name "Wide" :parameters {:width 1.2}}}
+      :template {:kind :furniture :name "Casework" :global-id nil
+                 :placement {:location [0 0 0]}
+                 :geometry {:kind :extruded-area-solid
+                            :profile {:kind :rectangle :x-dim [:param :width]
+                                      :y-dim [:param :depth]}
+                            :position {:location [0 0 0]} :direction [0 0 1]
+                            :depth [:param :height]}
+                 :quantities {:gross-volume-m3 [:param :volume]}
+                 :psets {} :openings [] :connected-to []}})]))
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
                       :selected-space nil :next-space-id 1000
-                      :selected-clash nil
+                      :selected-clash nil :family-catalog (initial-family-catalog)
                       :history [] :future [] :azimuth 0.75 :elevation 0.5
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
                       :revision 0 :save-status :clean}))
@@ -18,6 +38,17 @@
 (defn- spaces [] (:spaces (bim/find-storey (:project @state) (:active-storey @state))))
 (defn- all-spaces [] (mapcat :spaces (storeys)))
 (defn- selected [] (first (filter #(= (:selected @state) (:id %)) (elements))))
+(defn- selected-family []
+  (get-in @state [:family-catalog :family-catalog/families
+                  (.-value (.getElementById js/document "family-definition"))]))
+(defn- refresh-family-types! []
+  (let [select (.getElementById js/document "family-type") family (selected-family)]
+    (set! (.-innerHTML select) "")
+    (doseq [[type-key type-spec] (:family/types family)]
+      (let [option (.createElement js/document "option")]
+        (set! (.-value option) (name type-key))
+        (set! (.-textContent option) (or (:name type-spec) (name type-key)))
+        (.appendChild select option)))))
 (defn- mesh [] (bim/merge-meshes (keep bim/element-mesh (all-elements))))
 (defn- element-rows []
   (mapcat (fn [storey]
@@ -150,6 +181,7 @@
 (defn- project-document []
   (let [{:keys [project-id project-name project active-storey selected azimuth elevation profile]} @state]
     (project/document {:id project-id :name project-name :building-model project
+                       :family-catalog (:family-catalog @state)
                        :editor {:active-storey active-storey :selected selected}
                        :camera {:azimuth azimuth :elevation elevation} :interaction {:profile profile}})))
 (defn- save-project! []
@@ -166,6 +198,8 @@
            :active-storey (:active-storey editor) :selected (:selected editor) :azimuth (:azimuth camera)
            :elevation (:elevation camera) :profile (:profile interaction) :next-id (inc (reduce max 13 element-ids))
            :next-storey-id (inc (reduce max 3 storey-ids)) :next-space-id (inc (reduce max 999 space-ids))
+           :family-catalog (if (seq (:project/family-catalog p))
+                             (:project/family-catalog p) (initial-family-catalog))
            :selected-space nil :history [] :future [] :shortcut-buffer "" :save-status :saved)
     (set! (.-value (.getElementById js/document "profile")) (name (:profile interaction))) (refresh!)))
 (defn- load-project! []
@@ -222,6 +256,18 @@
                                      :vectorworks "2 Wall · D Door · W Window · L Layer · F Floor"
                                      "WA Wall · DR Door · WN Window · LL Level · FL Floor")) (refresh!)))
  (.addEventListener js/window "keydown" invoke-shortcut!)
+ (.addEventListener (.getElementById js/document "family-definition") "change" refresh-family-types!)
+ (refresh-family-types!)
+ (.addEventListener (.getElementById js/document "add-family-instance") "click"
+                    #(let [id (:next-id @state)
+                           family-id (.-value (.getElementById js/document "family-definition"))
+                           type-key (keyword (.-value (.getElementById js/document "family-type")))
+                           instance (family/instantiate-family-type
+                                     (:family-catalog @state) family-id type-key id
+                                     {:depth (num "family-depth") :height (num "family-height")})]
+                       (swap! state update :next-id inc)
+                       (swap! state assoc :selected id)
+                       (commit! (bim/add-element (:project @state) (:active-storey @state) instance))))
  (.addEventListener (.getElementById js/document "add-wall") "click" #(let [id (:next-id @state) storey-id (:active-storey @state)
                                                                                   z (:elevation (bim/find-storey (:project @state) storey-id))
                                                                                   y (+ 7 (- id 14)) w (wall id [0 y z] [4 y z])]
