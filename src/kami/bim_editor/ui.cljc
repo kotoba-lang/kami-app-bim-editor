@@ -98,5 +98,23 @@
                               [:option {:value "radial"} "Radial"]]]
        [:label "Copies" [:input {:id "array-count" :type "number" :min 1 :max 100 :step 1 :value 3}]]
        [:button {:id "array-element"} "Array (AR)"]
+       [:h2 "Modify geometry"]
+       [:label "Align axis" [:select {:id "align-axis"}
+                              [:option {:value "x"} "X"] [:option {:value "y"} "Y"]
+                              [:option {:value "z"} "Z"]]]
+       [:label "Reference anchor" [:select {:id "align-reference-anchor"}
+                                     [:option {:value "min"} "Minimum"]
+                                     [:option {:value "center"} "Center"]
+                                     [:option {:value "max"} "Maximum"]]]
+       [:label "Moving anchor" [:select {:id "align-moving-anchor"}
+                                  [:option {:value "min"} "Minimum"]
+                                  [:option {:value "center"} "Center"]
+                                  [:option {:value "max"} "Maximum"]]]
+       [:button {:id "align-elements"} "Align (AL)"]
+       [:label "Wall offset (m)" [:input {:id "wall-offset" :type "number" :step 0.1 :value 0.2}]]
+       [:button {:id "offset-walls"} "Offset walls (OF)"]
+       [:button {:id "trim-walls"} "Trim / Extend walls (TR)"]
+       [:button {:id "join-walls"} "Join walls (WJ)"]
+       [:div {:id "authoring-status"} "Modify ready"]
        [:button {:id "delete"} "Delete element"]]]
      [:span {:id "debug-state" :style {:display "none"}}] [:script {:src "./js/app.js"}]]]))

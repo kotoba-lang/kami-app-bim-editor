@@ -12,6 +12,9 @@
                 "rotate-element" "mirror-element" "array-element" "transform-angle"
                 "pivot-x" "pivot-y" "pivot-z" "mirror-x" "mirror-y" "mirror-z"
                 "array-kind" "array-count"
+                "align-axis" "align-reference-anchor" "align-moving-anchor"
+                "align-elements" "wall-offset" "offset-walls" "trim-walls"
+                "join-walls" "authoring-status"
                 "add-room" "quantity-schedule" "clash-results" "drawing-kind"
                 "drawing-format" "export-drawing" "import-ifc-file"]]
       (is (string/includes? page (str "id=\"" id "\""))))
