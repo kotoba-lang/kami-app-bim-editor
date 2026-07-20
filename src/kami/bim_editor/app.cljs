@@ -819,6 +819,109 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "engineering-status"))
             (str "Duct error: " (.-message error))))))
+(defn- design-electrical-panel! []
+  (try
+    (let [id (:next-id @state) panel-id (str "panel-" id)
+          point (parse-point "panel-point")
+          demand-factor (/ (num "panel-demand-factor") 100.0)
+          main-rating (num "panel-main-rating")
+          circuit-specs [{:suffix "lighting" :name "Lighting"
+                          :load (num "panel-load-a") :length (num "panel-length-a")}
+                         {:suffix "sockets" :name "Sockets"
+                          :load (num "panel-load-b") :length (num "panel-length-b")}
+                         {:suffix "equipment" :name "Equipment"
+                          :load (num "panel-load-c") :length (num "panel-length-c")}]
+          conductor-catalog [{:id :cu-1.5 :area-mm2 1.5 :ampacity-a 16.0}
+                             {:id :cu-2.5 :area-mm2 2.5 :ampacity-a 24.0}
+                             {:id :cu-4 :area-mm2 4.0 :ampacity-a 32.0}
+                             {:id :cu-6 :area-mm2 6.0 :ampacity-a 41.0}
+                             {:id :cu-10 :area-mm2 10.0 :ampacity-a 57.0}
+                             {:id :cu-16 :area-mm2 16.0 :ampacity-a 76.0}
+                             {:id :cu-25 :area-mm2 25.0 :ampacity-a 101.0}]
+          unsized (mapv (fn [{:keys [suffix name load length]}]
+                          (mep/electrical-circuit
+                           {:id (str panel-id "-" suffix) :name name
+                            :apparent-power-va load :voltage-v 230.0
+                            :power-factor 1.0 :poles 1 :length-m length}))
+                        circuit-specs)
+          selections (mapv #(mep/select-circuit-conductor
+                             % conductor-catalog 3.0) unsized)
+          circuits (mapv (fn [circuit selection]
+                           (assoc circuit :circuit/conductor-area-mm2
+                                  (:electrical.conductor/area-mm2 selection)
+                                  :circuit/conductor selection))
+                         unsized selections)
+          panel-analysis (mep/analyze-panel
+                          {:id panel-id :phases [:l1 :l2 :l3] :circuits circuits
+                           :main-rating-a main-rating :demand-factor demand-factor
+                           :max-imbalance-percent 50.0
+                           :max-voltage-drop-percent 3.0})
+          circuits (mapv #(assoc % :circuit/phase
+                                 (get-in panel-analysis
+                                         [:panel/assignments (:circuit/id %)]))
+                         circuits)
+          total-load (* demand-factor
+                        (reduce + (map :circuit/apparent-power-va circuits)))
+          feeder-circuit (mep/electrical-circuit
+                          {:id (str panel-id "-feeder") :name "Panel feeder"
+                           :apparent-power-va total-load :voltage-v 400.0
+                           :power-factor 0.9 :poles 3 :length-m 30.0})
+          feeder-conductor (mep/select-circuit-conductor
+                            feeder-circuit conductor-catalog 3.0)
+          feeder-entry (:electrical.conductor/catalog-entry feeder-conductor)
+          feeder-area (:area-mm2 feeder-entry)
+          feeder-analysis (mep/analyze-electrical-feeder
+                           {:id (:circuit/id feeder-circuit) :phases 3
+                            :apparent-power-va total-load :voltage-v 400.0
+                            :power-factor 0.9 :length-m 30.0
+                            :resistance-ohm-m (/ 1.724e-8 (* feeder-area 1.0e-6))
+                            :reactance-ohm-m 8.0e-5
+                            :source-resistance-ohm 0.01 :source-reactance-ohm 0.02
+                            :cable-ampacity-a (:ampacity-a feeder-entry)
+                            :max-voltage-drop-percent 3.0})
+          protection (mep/select-protective-device
+                      feeder-analysis
+                      [{:id :mcb-10 :rating-a 10.0 :breaking-capacity-a 10000.0
+                        :instantaneous-trip-multiple 10.0}
+                       {:id :mcb-16 :rating-a 16.0 :breaking-capacity-a 10000.0
+                        :instantaneous-trip-multiple 10.0}
+                       {:id :mcb-20 :rating-a 20.0 :breaking-capacity-a 10000.0
+                        :instantaneous-trip-multiple 10.0}
+                       {:id :mcb-32 :rating-a 32.0 :breaking-capacity-a 10000.0
+                        :instantaneous-trip-multiple 10.0}
+                       {:id :mccb-50 :rating-a 50.0 :breaking-capacity-a 15000.0
+                        :instantaneous-trip-multiple 10.0}
+                       {:id :mccb-63 :rating-a 63.0 :breaking-capacity-a 15000.0
+                        :instantaneous-trip-multiple 10.0}])
+          connector (family/mep-connector
+                     {:id (str panel-id "-main") :point point :direction [1 0 0]
+                      :domain :electrical :shape :cable :size feeder-area
+                      :flow-direction :in})
+          panel (family/mep-equipment
+                 {:id id :name panel-id :kind :panelboard :system-id :normal-power
+                  :connectors [connector]
+                  :geometry {:kind :extruded-area-solid
+                             :profile {:kind :rectangle :x-dim 0.6 :y-dim 0.2}
+                             :position {:location point} :direction [0 0 1] :depth 0.9}
+                  :properties {:electrical/circuits circuits
+                               :electrical/panel-analysis panel-analysis
+                               :electrical/feeder-analysis feeder-analysis
+                               :electrical/feeder-conductor feeder-conductor
+                               :electrical/protection protection}})
+          breaker (get-in protection [:electrical.protection/device :rating-a])
+          issue-count (+ (count (:panel/issues panel-analysis))
+                         (count (:electrical.feeder/issues feeder-analysis)))]
+      (swap! state update :next-id inc)
+      (select-only! id)
+      (commit! (bim/add-element (:project @state) (:active-storey @state) panel))
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Panel " panel-id " · 3 circuits · feeder " feeder-area
+                 " mm² · " breaker " A protection · imbalance "
+                 (.toFixed (:panel/imbalance-percent panel-analysis) 1)
+                 "% · " issue-count " issues")))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Electrical error: " (.-message error))))))
 (defn- add-mep-equipment! []
   (try
     (let [id (:next-id @state)
@@ -1105,6 +1208,8 @@
  (.addEventListener (.getElementById js/document "design-mep-network") "click"
                     design-mep-network!)
  (.addEventListener (.getElementById js/document "route-duct") "click" route-duct!)
+ (.addEventListener (.getElementById js/document "design-electrical-panel") "click"
+                    design-electrical-panel!)
  (.addEventListener (.getElementById js/document "add-mep-equipment") "click"
                     add-mep-equipment!)
  (.addEventListener (.getElementById js/document "connect-mep-elements") "click"
