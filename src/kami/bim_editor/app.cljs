@@ -273,6 +273,12 @@
 (defn- parse-point [id]
   (mapv #(js/parseFloat (.trim %))
         (string/split (.-value (.getElementById js/document id)) #",")))
+(defn- parse-path [id]
+  (mapv (fn [point]
+          (mapv #(js/parseFloat (string/trim %)) (string/split point #",")))
+        (remove string/blank?
+                (map string/trim
+                     (string/split (.-value (.getElementById js/document id)) #";")))))
 (defn- parse-wall-layers []
   (mapv (fn [spec]
           (let [parts (mapv string/trim (string/split spec #":"))
@@ -331,7 +337,7 @@
   (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
 (def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level"
-                      "fl" "add-slab" "rf" "add-roof" "st" "add-stair"
+                      "fl" "add-slab" "rf" "add-roof" "st" "add-stair" "rl" "add-railing"
                       "mv" "move-element" "co" "copy-element"
                       "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
@@ -580,6 +586,21 @@
                                        :riser-count (num "stair-risers")})]
                            (swap! state assoc :next-id (inc id) :selected id :selection #{id})
                            (bim/add-element (:project @state) (:active-storey @state) stair))))))
+ (.addEventListener (.getElementById js/document "add-railing") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Railing added"
+                       (fn []
+                         (let [id (:next-id @state)
+                               storey (bim/find-storey (:project @state) (:active-storey @state))
+                               path (mapv #(update % 2 + (:elevation storey))
+                                          (parse-path "railing-path"))
+                               railing (bim/path-railing
+                                        {:id id :name (str "Railing " id) :path path
+                                         :height (num "railing-height")
+                                         :post-spacing (num "railing-spacing")})]
+                           (swap! state assoc :next-id (inc id) :selected id :selection #{id})
+                           (bim/add-element (:project @state) (:active-storey @state) railing))))))
  (.addEventListener (.getElementById js/document "add-room") "click"
                     #(let [id (:next-space-id @state) storey (bim/find-storey (:project @state) (:active-storey @state))
                            z (:elevation storey) width (max 0.1 (num "room-width")) depth (max 0.1 (num "room-depth"))
