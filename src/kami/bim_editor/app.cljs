@@ -110,7 +110,17 @@
       (set! (.-value (.getElementById js/document "family-depth")) (parameter :depth))
       (set! (.-value (.getElementById js/document "family-height")) (parameter :height))
       (set! (.-value (.getElementById js/document "family-material")) (parameter :finish))
-      (set! (.-checked (.getElementById js/document "family-shared")) (:family/shared? definition)))))
+      (set! (.-checked (.getElementById js/document "family-shared")) (:family/shared? definition))
+      (set! (.-value (.getElementById js/document "family-formulas"))
+            (pr-str (or (:family/formulas definition) {})))
+      (set! (.-value (.getElementById js/document "family-reference-planes"))
+            (pr-str (or (:family/reference-planes definition) {})))
+      (set! (.-value (.getElementById js/document "family-constraints"))
+            (pr-str (or (:family/constraints definition) [])))
+      (set! (.-value (.getElementById js/document "family-sketches"))
+            (pr-str (or (:family/sketches definition) {})))
+      (set! (.-value (.getElementById js/document "family-template"))
+            (pr-str (:family/template definition))))))
 (defn- refresh-family-types! []
   (let [select (.getElementById js/document "family-type") family (selected-family)]
     (set! (.-innerHTML select) "")
@@ -330,6 +340,9 @@
              :camera-distance (:camera/distance frame))
       (refresh!))))
 (defn- num [id] (js/parseFloat (.-value (.getElementById js/document id))))
+(defn- edn-field [id fallback]
+  (let [value (string/trim (.-value (.getElementById js/document id)))]
+    (if (string/blank? value) fallback (reader/read-string value))))
 (defn- snap-delta [elements delta]
   (let [elements (vec elements) selected-ids (set (map :id elements))
         enabled? (.-checked (.getElementById js/document "snap-enabled"))
@@ -1233,7 +1246,7 @@
                        (let [id (.-value (.getElementById js/document "family-id"))
                              existing (get-in @state [:family-catalog :family-catalog/families
                                                       (family-editor/family-key id)])
-                             definition
+                             base-definition
                              (family-editor/box-family
                               {:id id
                                :name (.-value (.getElementById js/document "family-name"))
@@ -1242,7 +1255,17 @@
                                :height (num "family-height")
                                :material (.-value (.getElementById js/document "family-material"))
                                :shared? (.-checked (.getElementById js/document "family-shared"))
-                               :types (:family/types existing)})]
+                               :types (:family/types existing)})
+                             definition
+                             (family-editor/apply-parametric-schema
+                              base-definition
+                              {:formulas (edn-field "family-formulas" {})
+                               :reference-planes
+                               (edn-field "family-reference-planes" {})
+                               :constraints (edn-field "family-constraints" [])
+                               :sketches (edn-field "family-sketches" {})
+                               :template (edn-field "family-template"
+                                                    (:family/template base-definition))})]
                          (swap! state update :family-catalog family-editor/upsert-family definition)
                          (refresh-family-definitions!)
                          (set! (.-value (.getElementById js/document "family-definition"))

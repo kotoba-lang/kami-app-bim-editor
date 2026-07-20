@@ -37,6 +37,24 @@
 (defn upsert-family [catalog definition]
   (assoc-in catalog [:family-catalog/families (:family/id definition)] definition))
 
+(defn apply-parametric-schema
+  "Apply advanced family formulas, datums, constraints, sketches, and template.
+  A trial instance is resolved before the definition may enter the catalog."
+  [definition {:keys [formulas reference-planes constraints sketches template]}]
+  (when-not (and (map? formulas) (map? reference-planes) (vector? constraints)
+                 (map? sketches) (map? template))
+    (throw (ex-info "advanced family schema has invalid collection types"
+                    {:formulas formulas :reference-planes reference-planes
+                     :constraints constraints :sketches sketches :template template})))
+  (let [definition (assoc definition
+                          :family/formulas formulas
+                          :family/reference-planes reference-planes
+                          :family/constraints constraints
+                          :family/sketches sketches
+                          :family/template template)]
+    (family/instantiate-family definition "family-schema-validation" {})
+    definition))
+
 (defn upsert-type [catalog family-id type-name width]
   (let [type-key (keyword (family-key type-name))]
     (when-not (get-in catalog [:family-catalog/families family-id])

@@ -25,3 +25,22 @@
   (is (thrown-with-msg? #?(:clj Exception :cljs js/Error) #"family id is required"
                         (editor/box-family {:id " " :width 1 :depth 1 :height 1
                                             :material "Default"}))))
+
+(deftest validates-and-applies-advanced-parametric-family-schema
+  (let [definition (editor/box-family
+                    {:id "symmetric-panel" :name "Symmetric Panel"
+                     :category :generic-model :width 2.0 :depth 0.2 :height 1.0
+                     :material "Steel"})
+        schema {:formulas {:volume [:* [:param :width] [:param :depth]
+                                      [:param :height]]}
+                :reference-planes {:left {:axis :x :offset -1.0}
+                                   :right {:axis :x :offset 1.0}}
+                :constraints [{:kind :distance :from :left :to :right :value 2.0}]
+                :sketches {}
+                :template (:family/template definition)}
+        advanced (editor/apply-parametric-schema definition schema)]
+    (is (= (:constraints schema) (:family/constraints advanced)))
+    (is (= -1.0 (get-in advanced [:family/reference-planes :left :offset])))
+    (is (thrown? #?(:clj Exception :cljs js/Error)
+                 (editor/apply-parametric-schema
+                  definition (assoc schema :constraints {:not "a vector"}))))))

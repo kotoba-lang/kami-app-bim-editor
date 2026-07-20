@@ -62,6 +62,16 @@
        [:label "Height (m)" [:input {:id "family-height" :type "number" :value 0.9}]]
        [:label "Material" [:input {:id "family-material" :value "Oak"}]]
        [:label "Shared family" [:input {:id "family-shared" :type "checkbox"}]]
+       [:label "Formulas (EDN)"
+        [:textarea {:id "family-formulas" :rows 3} "{}"]]
+       [:label "Reference planes (EDN)"
+        [:textarea {:id "family-reference-planes" :rows 3} "{}"]]
+       [:label "Constraints (EDN)"
+        [:textarea {:id "family-constraints" :rows 3} "[]"]]
+       [:label "Sketches (EDN)"
+        [:textarea {:id "family-sketches" :rows 5} "{}"]]
+       [:label "Family template (EDN)"
+        [:textarea {:id "family-template" :rows 8} "{}"]]
        [:button {:id "save-family-definition"} "Save family definition"]
        [:label "Type name" [:input {:id "family-type-name" :value "Standard"}]]
        [:button {:id "save-family-type"} "Save family type"]
