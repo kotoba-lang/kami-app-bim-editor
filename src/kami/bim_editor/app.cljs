@@ -331,7 +331,7 @@
   (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
 (def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level"
-                      "fl" "add-slab" "mv" "move-element" "co" "copy-element"
+                      "fl" "add-slab" "rf" "add-roof" "mv" "move-element" "co" "copy-element"
                       "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
                       "wj" "join-walls" "wl" "apply-wall-layers"})
@@ -545,6 +545,23 @@
                                            :boundary [[0 0 z] [8 0 z] [8 6 z] [0 6 z]] :thickness 0.25})]
                        (swap! state assoc :next-id (inc id) :selected id :selection #{id})
                        (commit! (bim/add-element (:project @state) (:active-storey @state) slab))))
+ (.addEventListener (.getElementById js/document "add-roof") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Roof added"
+                       (fn []
+                         (let [id (:next-id @state)
+                               storey (bim/find-storey (:project @state) (:active-storey @state))
+                               z (+ (:elevation storey) (:height storey))
+                               width (num "roof-width") depth (num "roof-depth")
+                               roof (bim/gable-roof
+                                     {:id id :name (str "Roof " id)
+                                      :boundary [[0 0 z] [width 0 z]
+                                                 [width depth z] [0 depth z]]
+                                      :slope-rad (* (num "roof-slope") (/ js/Math.PI 180.0))
+                                      :thickness (num "roof-thickness")})]
+                           (swap! state assoc :next-id (inc id) :selected id :selection #{id})
+                           (bim/add-element (:project @state) (:active-storey @state) roof))))))
  (.addEventListener (.getElementById js/document "add-room") "click"
                     #(let [id (:next-space-id @state) storey (bim/find-storey (:project @state) (:active-storey @state))
                            z (:elevation storey) width (max 0.1 (num "room-width")) depth (max 0.1 (num "room-depth"))
