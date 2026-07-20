@@ -1,6 +1,7 @@
 (ns kami.bim-editor.integration-test
   (:require [clojure.test :refer [deftest is]]
             [bim]
+            [ifc.core :as ifc]
             [kami.bim-editor.integration :as integration]))
 
 (defn model []
@@ -25,3 +26,8 @@
     (is (= :design/revision-published
            (get-in bundle [:project/cloud-itonami :itonami/event])))
     (is (= 4 (get-in bundle [:project/cloud-itonami :design/revision])))))
+
+(deftest imports-shared-ifc-spf
+  (let [source (model)
+        text (ifc/write-spf (integration/coordinated-ifc source))]
+    (is (= source (integration/import-ifc-spf text)))))
