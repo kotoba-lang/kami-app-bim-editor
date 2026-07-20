@@ -1,4 +1,5 @@
 (ns kami.bim-editor.app (:require [cljs.reader :as reader] [clojure.string :as string] [bim]
+                                  [bim.editor :as editor]
                                   [bim.integration :as family]
                                   [bim.drawing :as drawing] [ifc.core :as ifc]
                                   [kami.bim-editor.integration :as integration]
@@ -28,7 +29,7 @@
 (defonce state (atom {:project (initial-project) :active-storey 3 :selected 10 :next-id 14 :next-storey-id 4
                       :selected-space nil :next-space-id 1000
                       :selected-clash nil :family-catalog (initial-family-catalog)
-                      :history [] :future [] :azimuth 0.75 :elevation 0.5
+                      :history [] :future [] :azimuth 0.75 :elevation 0.5 :last-snap nil
                       :camera-target [4.0 1.5 3.0] :camera-distance 14.0
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
                       :revision 0 :save-status :clean}))
@@ -209,6 +210,23 @@
              :camera-distance (:camera/distance frame))
       (refresh!))))
 (defn- num [id] (js/parseFloat (.-value (.getElementById js/document id))))
+(defn- snap-delta [element delta]
+  (let [enabled? (.-checked (.getElementById js/document "snap-enabled"))
+        source (editor/model-snap-candidates [element])
+        targets (editor/model-snap-candidates
+                 (remove #(= (:id element) (:id %)) (all-elements)))
+        evidence (when enabled?
+                   (editor/snap-translation
+                    source targets delta
+                    {:grid (num "snap-grid") :tolerance (num "snap-tolerance")}))
+        status (.getElementById js/document "snap-status")]
+    (swap! state assoc :last-snap evidence)
+    (set! (.-textContent status)
+          (if evidence
+            (str "Snapped " (name (:snap/kind evidence)) " · "
+                 (.toFixed (:snap/distance evidence) 3) " m")
+            (if enabled? "No snap in tolerance" "Snapping disabled")))
+    (or (:snap/delta evidence) delta)))
 (defn- parse-point [id]
   (mapv #(js/parseFloat (.trim %))
         (string/split (.-value (.getElementById js/document id)) #",")))
@@ -467,12 +485,13 @@
                        (when (bim/element-mesh e)
                          (let [delta [(num "move-x") (num "move-y") (num "move-z")]]
                            (commit! (bim/update-element (:project @state) (:active-storey @state)
-                                                        (:id e) bim/translate-element delta))))))
+                                                        (:id e) bim/translate-element
+                                                        (snap-delta e delta)))))))
  (.addEventListener (.getElementById js/document "copy-element") "click"
                     #(when-let [e (selected)]
                        (when (bim/element-mesh e)
                          (let [id (:next-id @state)
-                               delta [(num "move-x") (num "move-y") (num "move-z")]
+                               delta (snap-delta e [(num "move-x") (num "move-y") (num "move-z")])
                                copy (bim/duplicate-element e id delta)
                                p (bim/add-element (:project @state) (:active-storey @state) copy)]
                            (swap! state assoc :next-id (inc id) :selected id)
@@ -509,7 +528,8 @@
                                              (* (num "transform-angle") (/ js/Math.PI 180.0)))
                                             (bim/linear-array
                                              e identities
-                                             [(num "move-x") (num "move-y") (num "move-z")]))
+                                             (snap-delta e [(num "move-x") (num "move-y")
+                                                            (num "move-z")])))
                                    p (reduce (fn [project copy]
                                                (bim/add-element project (:active-storey @state) copy))
                                              (:project @state) copies)]
