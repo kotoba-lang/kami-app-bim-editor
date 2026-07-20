@@ -331,7 +331,8 @@
   (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
 (def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level"
-                      "fl" "add-slab" "rf" "add-roof" "mv" "move-element" "co" "copy-element"
+                      "fl" "add-slab" "rf" "add-roof" "st" "add-stair"
+                      "mv" "move-element" "co" "copy-element"
                       "ro" "rotate-element" "mm" "mirror-element" "ar" "array-element"
                       "al" "align-elements" "of" "offset-walls" "tr" "trim-walls"
                       "wj" "join-walls" "wl" "apply-wall-layers"})
@@ -562,6 +563,23 @@
                                       :thickness (num "roof-thickness")})]
                            (swap! state assoc :next-id (inc id) :selected id :selection #{id})
                            (bim/add-element (:project @state) (:active-storey @state) roof))))))
+ (.addEventListener (.getElementById js/document "add-stair") "click"
+                    (fn [_]
+                      (authoring-commit!
+                       "Stair added"
+                       (fn []
+                         (let [id (:next-id @state)
+                               storey (bim/find-storey (:project @state) (:active-storey @state))
+                               stair (bim/straight-stair
+                                      {:id id :name (str "Stair " id)
+                                       :start [0.0 0.0 (:elevation storey)]
+                                       :direction [1.0 0.0 0.0]
+                                       :width (num "stair-width")
+                                       :run-length (num "stair-run")
+                                       :total-rise (num "stair-rise")
+                                       :riser-count (num "stair-risers")})]
+                           (swap! state assoc :next-id (inc id) :selected id :selection #{id})
+                           (bim/add-element (:project @state) (:active-storey @state) stair))))))
  (.addEventListener (.getElementById js/document "add-room") "click"
                     #(let [id (:next-space-id @state) storey (bim/find-storey (:project @state) (:active-storey @state))
                            z (:elevation storey) width (max 0.1 (num "room-width")) depth (max 0.1 (num "room-depth"))
