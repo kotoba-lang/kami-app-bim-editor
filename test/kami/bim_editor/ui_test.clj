@@ -22,6 +22,7 @@
                 "wall-join-style" "wall-join-priority" "join-walls"
                 "wall-layers" "apply-wall-layers" "authoring-status"
                 "slab-layers" "apply-slab-layers" "shaft-x" "shaft-y"
+                "slab-elevations" "apply-slab-shape"
                 "shaft-width" "shaft-depth" "add-shaft-opening"
                 "add-room" "auto-rooms" "quantity-schedule" "clash-results" "drawing-kind"
                 "drawing-format" "export-drawing" "import-ifc-file"]]

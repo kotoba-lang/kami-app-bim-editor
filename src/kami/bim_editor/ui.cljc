@@ -149,6 +149,9 @@
         [:input {:id "slab-layers" :type "text"
                  :value "Finish:0.02:finish,Concrete:0.20:concrete"}]]
        [:button {:id "apply-slab-layers"} "Apply slab layers (SL)"]
+       [:label "Slab vertex elevations (m)"
+        [:input {:id "slab-elevations" :type "text" :value "0,0,0,0"}]]
+       [:button {:id "apply-slab-shape"} "Apply slab shape (SE)"]
        [:label "Shaft X (m)" [:input {:id "shaft-x" :type "number" :step 0.1 :value 3}]]
        [:label "Shaft Y (m)" [:input {:id "shaft-y" :type "number" :step 0.1 :value 2}]]
        [:label "Shaft width (m)" [:input {:id "shaft-width" :type "number" :min 0.1 :step 0.1 :value 1}]]
