@@ -34,9 +34,15 @@
 
 (deftest exports-pdf-and-dxf-through-shared-libraries
   (let [project (model)
-        dxf (integration/export-drawing project 3 :dxf)
-        pdf (integration/export-drawing project 3 :pdf)]
+        drawings {3 {:view/annotations
+                     [{:annotation/id 1 :kind :leader :points [[1 0] [1 1] [2 1]]
+                       :text "Rated wall"}]}}
+        dxf (integration/export-drawing project 3 :dxf drawings)
+        pdf (integration/export-drawing project 3 :pdf drawings)
+        pdf-text (apply str (map char (:content pdf)))]
     (is (= "application/dxf" (:media-type dxf)))
     (is (re-find #"0\nSECTION\n2\nENTITIES" (:content dxf)))
+    (is (re-find #"Rated wall" (:content dxf)))
     (is (= "application/pdf" (:media-type pdf)))
-    (is (= "%PDF" (apply str (map char (take 4 (:content pdf))))))))
+    (is (= "%PDF" (subs pdf-text 0 4)))
+    (is (re-find #"Rated wall" pdf-text))))
