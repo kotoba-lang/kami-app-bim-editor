@@ -112,6 +112,21 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Pipe diameter (m)<input id="pipe-diameter" type="number" value="0.1"></label>
         <button id="route-pipe">Route pipe</button>
         <div id="engineering-status">Ready</div>
+        <label>Equipment kind<select id="mep-equipment-kind">
+          <option value="pump">Pump</option>
+          <option value="air-terminal">Air terminal</option>
+          <option value="fixture">Plumbing fixture</option>
+        </select></label>
+        <label>Equipment point<input id="mep-equipment-point" value="0,3,2.5"></label>
+        <label>Connector domain<select id="mep-connector-domain">
+          <option value="piping">Piping</option>
+          <option value="hvac">HVAC</option>
+        </select></label>
+        <label>Connector size (m)<input id="mep-connector-size" type="number" min="0.001" value="0.1"></label>
+        <button id="add-mep-equipment">Add equipment / terminal</button>
+        <label>Connector A ID<input id="mep-connector-a"></label>
+        <label>Connector B ID<input id="mep-connector-b"></label>
+        <button id="connect-mep-elements">Connect MEP elements</button>
         <div id="structural-model-status">No analytical model</div>
         <h2>Rooms</h2>
         <label>Width (m)<input id="room-width" type="number" value="4"></label>
