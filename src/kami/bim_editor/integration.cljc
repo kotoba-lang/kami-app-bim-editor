@@ -30,8 +30,10 @@
 (defn export-drawing
   "Export an active floor plan or the full storey set through shared formats."
   ([project active-storey-id format]
-   (export-drawing project active-storey-id format {}))
+   (export-drawing project active-storey-id format {} nil))
   ([project active-storey-id format drawing-views]
+   (export-drawing project active-storey-id format drawing-views nil))
+  ([project active-storey-id format drawing-views print-setting]
    (let [storeys (mapcat :storeys (mapcat :buildings (:sites project)))
          storey (first (filter #(= active-storey-id (:id %)) storeys))
          annotations-by-storey
@@ -44,5 +46,6 @@
                        storey {:annotations (get annotations-by-storey active-storey-id)})}
        :pdf {:filename "building-drawing-set.pdf" :media-type "application/pdf"
              :content (interchange/drawing-set-pdf
-                       (vec storeys) {:annotations-by-storey annotations-by-storey})}
+                       (vec storeys) {:annotations-by-storey annotations-by-storey
+                                      :print-setting print-setting})}
        (throw (ex-info "unsupported BIM drawing export format" {:format format}))))))
