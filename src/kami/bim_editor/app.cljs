@@ -169,6 +169,52 @@
 (defn- commit! [p] (swap! state (fn [s] (-> s (update :history conj (:project s)) (assoc :project p :future [] :save-status :dirty) (update :revision inc)))) (refresh!))
 (defn- draw! [] (when-let [{:keys [buffers] :as v} @viewport] (when buffers (let [{:keys [azimuth elevation]} @state d 14 eye [(+ 4 (* d (js/Math.cos elevation) (js/Math.cos azimuth))) (+ 3 (* d (js/Math.sin elevation))) (+ 3 (* d (js/Math.cos elevation) (js/Math.sin azimuth)))]] (gpu/render-frame! v buffers eye [4 1.5 3] [0.55 0.7 0.95])))) (js/requestAnimationFrame draw!))
 (defn- num [id] (js/parseFloat (.-value (.getElementById js/document id))))
+(defn- parse-point [id]
+  (mapv #(js/parseFloat (.trim %))
+        (string/split (.-value (.getElementById js/document id)) #",")))
+(defn- element-obstacle [element]
+  (when-let [mesh (bim/element-mesh element)]
+    (let [positions (:positions mesh)]
+      {:min (apply mapv min positions) :max (apply mapv max positions)})))
+(defn- analyze-structure! []
+  (let [span (num "structural-span") load-n (* 1000.0 (num "structural-load"))
+        model (family/structural-model
+               {:nodes [(family/structural-node {:id :fixed :point [0.0 0.0]
+                                                 :restraints [true true]})
+                        (family/structural-node {:id :loaded :point [span 0.0]
+                                                 :restraints [false true]})]
+                :members [(family/structural-analysis-member
+                           {:id :member :start-node :fixed :end-node :loaded
+                            :area-m2 0.01 :elastic-modulus-pa 2.0e11 :material "S355"})]
+                :load-cases [(family/structural-load-case
+                              {:id :design :name "Design" :nodal-loads
+                               [{:node :loaded :fx load-n :fy 0.0}]})]})
+        result (family/analyze-2d-truss model :design)
+        displacement (get-in result [:structural.analysis/displacements :loaded 0])
+        force (get-in result [:structural.analysis/member-axial-forces :member])]
+    (set! (.-textContent (.getElementById js/document "engineering-status"))
+          (str "Axial " (.toFixed (/ force 1000.0) 2) " kN · Δ "
+               (.toFixed (* displacement 1000.0) 3) " mm"))))
+(defn- route-pipe! []
+  (let [start (parse-point "pipe-start") end (parse-point "pipe-end")
+        diameter (num "pipe-diameter")
+        obstacles (vec (keep element-obstacle (all-elements)))
+        path (family/route-mep start end obstacles {:step 0.25 :clearance diameter})]
+    (if (< (count path) 2)
+      (set! (.-textContent (.getElementById js/document "engineering-status")) "No route found")
+      (let [first-id (:next-id @state)
+            segments (mapv (fn [index [a b]]
+                             (family/mep-segment
+                              {:id (+ first-id index) :name (str "Pipe " (+ first-id index))
+                               :kind :pipe :start a :end b :diameter diameter :system-id :hydronic}))
+                           (range) (partition 2 1 path))
+            project (reduce #(bim/add-element %1 (:active-storey @state) %2)
+                            (:project @state) segments)]
+        (swap! state update :next-id + (count segments))
+        (swap! state assoc :selected (:id (first segments)))
+        (set! (.-textContent (.getElementById js/document "engineering-status"))
+              (str (count segments) " routed segments"))
+        (commit! project)))))
 (defn- editable-target? [event]
   (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
@@ -282,6 +328,8 @@
                                      :vectorworks "2 Wall · D Door · W Window · L Layer · F Floor"
                                      "WA Wall · DR Door · WN Window · LL Level · FL Floor")) (refresh!)))
  (.addEventListener js/window "keydown" invoke-shortcut!)
+ (.addEventListener (.getElementById js/document "analyze-structure") "click" analyze-structure!)
+ (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "family-definition") "change" refresh-family-types!)
  (refresh-family-types!)
  (.addEventListener (.getElementById js/document "add-family-instance") "click"
