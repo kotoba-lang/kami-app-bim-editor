@@ -66,5 +66,11 @@
        [:label "Height (m)" [:input {:id "height" :type "number" :step 0.1}]]
        [:label "Thickness (m)" [:input {:id "thickness" :type "number" :step 0.05}]]
        [:label "Material" [:input {:id "material"}]] [:button.primary {:id "apply"} "Apply properties"]
+       [:h2 "Transform"]
+       [:label "ΔX (m)" [:input {:id "move-x" :type "number" :step 0.1 :value 1}]]
+       [:label "ΔY (m)" [:input {:id "move-y" :type "number" :step 0.1 :value 0}]]
+       [:label "ΔZ (m)" [:input {:id "move-z" :type "number" :step 0.1 :value 0}]]
+       [:button.primary {:id "move-element"} "Move (MV)"]
+       [:button {:id "copy-element"} "Copy (CO)"]
        [:button {:id "delete"} "Delete element"]]]
      [:span {:id "debug-state" :style {:display "none"}}] [:script {:src "./js/app.js"}]]]))

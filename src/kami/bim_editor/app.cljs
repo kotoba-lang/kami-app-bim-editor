@@ -258,10 +258,13 @@
 (defn- editable-target? [event]
   (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
-(def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level" "fl" "add-slab"})
+(def revit-shortcuts {"wa" "add-wall" "dr" "add-door" "wn" "add-window" "ll" "add-level"
+                      "fl" "add-slab" "mv" "move-element" "co" "copy-element"})
 (def profile-shortcuts
-  {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level" "f" "add-slab"}
-   :vectorworks {"2" "add-wall" "d" "add-door" "w" "add-window" "l" "add-level" "f" "add-slab"}})
+  {:archicad {"w" "add-wall" "d" "add-door" "n" "add-window" "l" "add-level"
+              "f" "add-slab" "m" "move-element" "c" "copy-element"}
+   :vectorworks {"2" "add-wall" "d" "add-door" "w" "add-window" "l" "add-level"
+                 "f" "add-slab" "m" "move-element" "c" "copy-element"}})
 (def ^:private storage-key "kami.bim-editor.project.v2")
 (def ^:private backup-key "kami.bim-editor.project.backup")
 (defn- project-document []
@@ -456,6 +459,21 @@
                              (swap! state assoc :selected id)
                              (commit! p))))))
  (.addEventListener (.getElementById js/document "apply") "click" #(when-let [e (selected)] (let [[[x y z] _] (get-in e [:geometry :axis]) len (num "length") updated (bim/wall {:id (:id e) :name (.-value (.getElementById js/document "name")) :start [x y z] :end [(+ x len) y z] :height (num "height") :thickness (num "thickness") :material (.-value (.getElementById js/document "material"))})] (commit! (bim/update-element (:project @state) (:active-storey @state) (:id e) (constantly updated))))))
+ (.addEventListener (.getElementById js/document "move-element") "click"
+                    #(when-let [e (selected)]
+                       (when (bim/element-mesh e)
+                         (let [delta [(num "move-x") (num "move-y") (num "move-z")]]
+                           (commit! (bim/update-element (:project @state) (:active-storey @state)
+                                                        (:id e) bim/translate-element delta))))))
+ (.addEventListener (.getElementById js/document "copy-element") "click"
+                    #(when-let [e (selected)]
+                       (when (bim/element-mesh e)
+                         (let [id (:next-id @state)
+                               delta [(num "move-x") (num "move-y") (num "move-z")]
+                               copy (bim/duplicate-element e id delta)
+                               p (bim/add-element (:project @state) (:active-storey @state) copy)]
+                           (swap! state assoc :next-id (inc id) :selected id)
+                           (commit! p)))))
  (.addEventListener (.getElementById js/document "delete") "click"
                     #(when-let [e (selected)]
                        (let [p (if (#{:door :window} (:kind e))
