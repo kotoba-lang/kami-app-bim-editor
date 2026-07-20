@@ -72,6 +72,11 @@
        [:label "ΔZ (m)" [:input {:id "move-z" :type "number" :step 0.1 :value 0}]]
        [:button.primary {:id "move-element"} "Move (MV)"]
        [:button {:id "copy-element"} "Copy (CO)"]
+       [:label "Snapping" [:input {:id "snap-enabled" :type "checkbox" :checked true}]]
+       [:label "Grid (m)" [:input {:id "snap-grid" :type "number" :min 0.001 :step 0.1 :value 0.5}]]
+       [:label "Tolerance (m)" [:input {:id "snap-tolerance" :type "number" :min 0.001
+                                        :step 0.01 :value 0.15}]]
+       [:div {:id "snap-status"} "Snap ready"]
        [:label "Angle (deg)" [:input {:id "transform-angle" :type "number" :step 1 :value 90}]]
        [:label "Pivot X" [:input {:id "pivot-x" :type "number" :step 0.1 :value 0}]]
        [:label "Pivot Y" [:input {:id "pivot-y" :type "number" :step 0.1 :value 0}]]
