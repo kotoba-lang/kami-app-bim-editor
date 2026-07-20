@@ -70,3 +70,24 @@
     (is (= :dirty (:save-status committed)))
     (is (= original (:project cancelled)))
     (is (nil? (:last-snap cancelled)))))
+
+(deftest modifier-selection-and-screen-rectangle-are-deterministic
+  (is (= {:selection #{2} :primary 2}
+         (interaction/selection-after-click #{1} 2 :replace)))
+  (is (= {:selection #{1 2} :primary 2}
+         (interaction/selection-after-click #{1} 2 :add)))
+  (is (= {:selection #{1} :primary 1}
+         (interaction/selection-after-click #{1 2} 2 :toggle)))
+  (is (= {:selection #{1 3} :primary 1}
+         (interaction/selection-after-box #{1 2} [2 3] :toggle)))
+  (let [near (bim/wall {:id 10 :start [-1.0 0.0 0.0] :end [1.0 0.0 0.0]
+                        :thickness 0.2 :height 2.0})
+        right (bim/wall {:id 11 :start [3.0 0.0 0.0] :end [5.0 0.0 0.0]
+                         :thickness 0.2 :height 2.0})
+        camera {:eye [0.0 8.0 1.0] :target [0.0 0.0 1.0] :aspect 1.0}]
+    (is (= [10]
+           (interaction/elements-in-screen-rect
+            [near right] camera {:min [-0.3 -0.3] :max [0.3 0.3]} :crossing)))
+    (is (= []
+           (interaction/elements-in-screen-rect
+            [near] camera {:min [-0.05 -0.05] :max [0.05 0.05]} :window)))))

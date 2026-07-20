@@ -115,14 +115,90 @@
   "Build stable per-element render items so selection can be highlighted in
   the shared depth pass. Elements without renderable geometry are omitted."
   [elements selected-id]
+  (let [selected? (if (set? selected-id) #(contains? selected-id %)
+                      #(= selected-id %))]
   (->> elements
        (keep (fn [element]
                (when-let [mesh (bim/element-mesh element)]
                  {:element/id (:id element)
                   :mesh mesh
-                  :color (if (= selected-id (:id element))
+                  :color (if (selected? (:id element))
                            selection-color model-color)})))
-       vec))
+       vec)))
+
+(defn selection-after-click
+  "Apply replace/add/toggle semantics while retaining a deterministic primary id."
+  [selection element-id mode]
+  (let [selection (set selection)
+        next-selection (case mode
+                         :replace (if element-id #{element-id} #{})
+                         :add (if element-id (conj selection element-id) selection)
+                         :toggle (if element-id
+                                   (if (contains? selection element-id)
+                                     (disj selection element-id) (conj selection element-id))
+                                   selection))
+        primary (cond
+                  (and element-id (contains? next-selection element-id)) element-id
+                  (seq next-selection) (first (sort-by str next-selection))
+                  :else nil)]
+    {:selection next-selection :primary primary}))
+
+(defn selection-after-box [selection element-ids mode]
+  (let [selection (set selection) ids (set element-ids)
+        next-selection (case mode
+                         :replace ids
+                         :add (into selection ids)
+                         :toggle (reduce (fn [result id]
+                                           (if (contains? result id)
+                                             (disj result id) (conj result id)))
+                                         selection ids))]
+    {:selection next-selection
+     :primary (first (sort-by str next-selection))}))
+
+(defn project-point
+  "Project a world point into viewport NDC using the same camera convention as camera-ray."
+  [{:keys [eye target aspect fov-radians]
+    :or {aspect 1.0 fov-radians default-fov-radians}}
+   point]
+  (let [forward (normalize (subtract target eye))
+        world-up (if (> (#?(:clj Math/abs :cljs js/Math.abs)
+                           (dot forward [0.0 1.0 0.0])) 0.999)
+                   [0.0 0.0 1.0] [0.0 1.0 0.0])
+        right (normalize (cross forward world-up)) up (cross right forward)
+        delta (subtract point eye) depth (dot delta forward)
+        half-height (#?(:clj Math/tan :cljs js/Math.tan) (/ fov-radians 2.0))]
+    (when (> depth 1.0e-9)
+      [(/ (dot delta right) (* depth aspect half-height))
+       (/ (dot delta up) (* depth half-height))])))
+
+(defn- bounds-corners [{:keys [min max]}]
+  (for [x [(nth min 0) (nth max 0)]
+        y [(nth min 1) (nth max 1)]
+        z [(nth min 2) (nth max 2)]] [x y z]))
+
+(defn elements-in-screen-rect
+  "Select mesh-backed elements by an NDC rectangle. Window mode requires the
+  projected bounds to be contained; crossing mode accepts any overlap."
+  [elements camera {:keys [min max]} mode]
+  (let [[left bottom] min [right top] max
+        overlaps? (fn [[element-left element-bottom] [element-right element-top]]
+                    (and (<= element-left right) (<= left element-right)
+                         (<= element-bottom top) (<= bottom element-top)))
+        contained? (fn [[element-left element-bottom] [element-right element-top]]
+                     (and (<= left element-left element-right right)
+                          (<= bottom element-bottom element-top top)))]
+    (->> elements
+         (keep (fn [element]
+                 (when-let [bounds (element-bounds element)]
+                   (let [points (vec (keep #(project-point camera %) (bounds-corners bounds)))]
+                     (when (seq points)
+                       (let [screen-bounds {:min (apply mapv clojure.core/min points)
+                                            :max (apply mapv clojure.core/max points)}]
+                         (when ((if (= :window mode) contained? overlaps?)
+                                (:min screen-bounds) (:max screen-bounds))
+                           (:id element))))))))
+         (sort-by str)
+         vec)))
 
 (defn frame-bounds
   "Return an orbit target and distance that fit a box at the requested FOV."
