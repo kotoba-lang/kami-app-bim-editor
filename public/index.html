@@ -8,14 +8,18 @@
 body { margin: 0; height: 100vh; display: grid; grid-template-rows: 52px 1fr; font-family: Inter,system-ui; background: #09101c; color: #e7ecfa; }
 .selected { border-color: #9fb9ff; background: #314a82; }
 label { display: grid; gap: 4px; margin: 9px 0; }
+.snap-marker { position: absolute; width: 12px; height: 12px; transform: translate(-50%,-50%) rotate(45deg); border: 2px solid #fbbf24; background: #111827aa; pointer-events: none; }
 h2 { font-size: 11px; margin-top: 20px; text-transform: uppercase; letter-spacing: .1em; color: #a7b9e0; }
 button,input,select { width: 100%; margin: 5px 0; padding: 8px; background: #20315b; border: 1px solid #526fa9; border-radius: 5px; color: #e7ecfa; }
+.selection-box { position: absolute; border: 1px solid #60a5fa; background: #3b82f633; pointer-events: none; }
+.drag-measure { transform: translateX(-50%); color: #ffd28a; font-size: 12px; top: 18px; background: #09101cee; padding: 7px 10px; position: absolute; border: 1px solid #f59e0b; pointer-events: none; left: 50%; }
 main { display: grid; grid-template-columns: 260px 1fr 300px; min-height: 0; }
 header .spacer { flex: 1; }
 #gpu-canvas { width: 100%; height: 100%; display: block; }
 #gpu-status { position: absolute; left: 50%; top: 45%; transform: translate(-50%,-50%); color: #ffb0b0; }
 header button,header select { width: auto; white-space: nowrap; }
 aside { padding: 16px; overflow-y: auto; background: #111a34; border-right: 1px solid #2d3e68; }
+.viewport-help { position: absolute; left: 14px; bottom: 14px; padding: 8px; background: #08101dcc; color: #b9c8e8; font-size: 11px; pointer-events: none; }
 header { padding: 0 16px; display: flex; align-items: center; gap: 8px; overflow-x: auto; background: #121c38; }
 button { cursor: pointer; text-align: left; }</style></head>
   <body>
@@ -39,6 +43,25 @@ button { cursor: pointer; text-align: left; }</style></head>
         <p id="profile-hint">WA Wall · DR Door · WN Window · LL Level · FL Floor</p>
         <button class="primary" id="add-wall">＋ Wall</button>
         <button id="add-slab">＋ Floor slab</button>
+        <label>Roof width (m)<input id="roof-width" type="number" min="0.1" step="0.5" value="8"></label>
+        <label>Roof depth (m)<input id="roof-depth" type="number" min="0.1" step="0.5" value="6"></label>
+        <label>Roof slope (deg)<input id="roof-slope" type="number" min="1" max="89" step="1" value="30"></label>
+        <label>Roof thickness (m)<input id="roof-thickness" type="number" min="0.01" step="0.05" value="0.2"></label>
+        <button id="add-roof">＋ Gable roof (RF)</button>
+        <label>Stair width (m)<input id="stair-width" type="number" min="0.1" step="0.1" value="1.2"></label>
+        <label>Stair run (m)<input id="stair-run" type="number" min="0.1" step="0.1" value="3.6"></label>
+        <label>Stair rise (m)<input id="stair-rise" type="number" min="0.1" step="0.1" value="3.2"></label>
+        <label>Risers<input id="stair-risers" type="number" min="2" step="1" value="18"></label>
+        <button id="add-stair">＋ Straight stair (ST)</button>
+        <label>Railing path (x,y,z; …)<input id="railing-path" value="0,0,0;4,0,0;4,3,0"></label>
+        <label>Railing height (m)<input id="railing-height" type="number" min="0.1" step="0.1" value="1.1"></label>
+        <label>Post spacing (m)<input id="railing-spacing" type="number" min="0.1" step="0.1" value="1.0"></label>
+        <button id="add-railing">＋ Path railing (RL)</button>
+        <label>Curtain width (m)<input id="curtain-width" type="number" min="0.1" step="0.5" value="8"></label>
+        <label>Curtain height (m)<input id="curtain-height" type="number" min="0.1" step="0.5" value="4"></label>
+        <label>Curtain columns<input id="curtain-columns" type="number" min="1" step="1" value="4"></label>
+        <label>Curtain rows<input id="curtain-rows" type="number" min="1" step="1" value="2"></label>
+        <button id="add-curtain">＋ Curtain wall (CW)</button>
         <button id="add-door">＋ Door in selected wall</button>
         <button id="add-window">＋ Window in selected wall</button>
         <h2>Families</h2>
@@ -46,9 +69,24 @@ button { cursor: pointer; text-align: left; }</style></head>
           <option value="casework">Casework</option>
         </select></label>
         <label>Type<select id="family-type"></select></label>
+        <label>Family ID<input id="family-id" value="casework"></label>
+        <label>Family name<input id="family-name" value="Casework"></label>
+        <label>Category<select id="family-category"><option value="furniture">furniture</option><option value="door">door</option><option value="window">window</option><option value="equipment">equipment</option><option value="generic-model">generic-model</option></select></label>
+        <label>Type width (m)<input id="family-width" type="number" min="0.01" step="0.1" value="0.8"></label>
         <label>Depth (m)<input id="family-depth" type="number" value="0.6"></label>
         <label>Height (m)<input id="family-height" type="number" value="0.9"></label>
+        <label>Material<input id="family-material" value="Oak"></label>
+        <label>Shared family<input id="family-shared" type="checkbox"></label>
+        <button id="save-family-definition">Save family definition</button>
+        <label>Type name<input id="family-type-name" value="Standard"></label>
+        <button id="save-family-type">Save family type</button>
+        <label>Display detail<select id="family-detail">
+          <option value="coarse">Coarse</option>
+          <option value="medium" selected>Medium</option>
+          <option value="fine">Fine</option>
+        </select></label>
         <button class="primary" id="add-family-instance">＋ Family instance</button>
+        <div id="family-status">Family ready</div>
         <h2>Engineering</h2>
         <label>Structural span (m)<input id="structural-span" type="number" value="6"></label>
         <label>Axial load (kN)<input id="structural-load" type="number" value="100"></label>
@@ -62,6 +100,7 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Width (m)<input id="room-width" type="number" value="4"></label>
         <label>Depth (m)<input id="room-depth" type="number" value="3"></label>
         <button id="add-room">＋ Room</button>
+        <button id="auto-rooms">Generate enclosed rooms (RM)</button>
         <div id="rooms"></div>
         <label>Room name<input id="room-name" value="Room"></label>
         <label>Use<select id="room-category"><option value="residential">residential</option><option value="office">office</option><option value="circulation">circulation</option><option value="service">service</option><option value="mechanical-room">mechanical-room</option><option value="other">other</option></select></label>
@@ -83,6 +122,10 @@ button { cursor: pointer; text-align: left; }</style></head>
       <section class="viewport">
         <canvas id="gpu-canvas" aria-label="BIM WebGPU viewport"></canvas>
         <div id="gpu-status">Initializing WebGPU…</div>
+        <div class="viewport-help">Click: select · Orbit tool: drag view · Move tool: drag element · Esc: cancel</div>
+        <div class="drag-measure" id="drag-measure" style="display:none;"></div>
+        <div class="snap-marker" id="snap-marker" style="display:none;"></div>
+        <div class="selection-box" id="selection-box" style="display:none;"></div>
         <div class="stats" id="stats">Loading model…</div>
       </section>
       <aside>
@@ -93,6 +136,80 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Thickness (m)<input id="thickness" type="number" step="0.05"></label>
         <label>Material<input id="material"></label>
         <button class="primary" id="apply">Apply properties</button>
+        <h2>Transform</h2>
+        <label>Viewport tool<select id="viewport-tool">
+          <option value="orbit">Orbit</option>
+          <option value="move">Move selected</option>
+          <option value="box">Box select</option>
+        </select></label>
+        <label>ΔX (m)<input id="move-x" type="number" step="0.1" value="1"></label>
+        <label>ΔY (m)<input id="move-y" type="number" step="0.1" value="0"></label>
+        <label>ΔZ (m)<input id="move-z" type="number" step="0.1" value="0"></label>
+        <button class="primary" id="move-element">Move (MV)</button>
+        <button id="copy-element">Copy (CO)</button>
+        <label>Snapping<input id="snap-enabled" type="checkbox" checked></label>
+        <label>Grid (m)<input id="snap-grid" type="number" min="0.001" step="0.1" value="0.5"></label>
+        <label>Tolerance (m)<input id="snap-tolerance" type="number" min="0.001" step="0.01" value="0.15"></label>
+        <div id="snap-status">Snap ready</div>
+        <label>Angle (deg)<input id="transform-angle" type="number" step="1" value="90"></label>
+        <label>Pivot X<input id="pivot-x" type="number" step="0.1" value="0"></label>
+        <label>Pivot Y<input id="pivot-y" type="number" step="0.1" value="0"></label>
+        <label>Pivot Z<input id="pivot-z" type="number" step="0.1" value="0"></label>
+        <button id="rotate-element">Rotate (RO)</button>
+        <label>Mirror normal X<input id="mirror-x" type="number" step="0.1" value="1"></label>
+        <label>Mirror normal Y<input id="mirror-y" type="number" step="0.1" value="0"></label>
+        <label>Mirror normal Z<input id="mirror-z" type="number" step="0.1" value="0"></label>
+        <button id="mirror-element">Mirror (MM)</button>
+        <label>Array kind<select id="array-kind">
+          <option value="linear">Linear</option>
+          <option value="radial">Radial</option>
+        </select></label>
+        <label>Copies<input id="array-count" type="number" min="1" max="100" step="1" value="3"></label>
+        <button id="array-element">Array (AR)</button>
+        <h2>Modify geometry</h2>
+        <label>Align axis<select id="align-axis">
+          <option value="x">X</option>
+          <option value="y">Y</option>
+          <option value="z">Z</option>
+        </select></label>
+        <label>Reference anchor<select id="align-reference-anchor">
+          <option value="min">Minimum</option>
+          <option value="center">Center</option>
+          <option value="max">Maximum</option>
+        </select></label>
+        <label>Moving anchor<select id="align-moving-anchor">
+          <option value="min">Minimum</option>
+          <option value="center">Center</option>
+          <option value="max">Maximum</option>
+        </select></label>
+        <button id="align-elements">Align (AL)</button>
+        <label>Wall offset (m)<input id="wall-offset" type="number" step="0.1" value="0.2"></label>
+        <button id="offset-walls">Offset walls (OF)</button>
+        <button id="trim-walls">Trim / Extend walls (TR)</button>
+        <label>Join style<select id="wall-join-style">
+          <option value="butt">Butt / clean solids</option>
+          <option value="centerline">Centerline</option>
+        </select></label>
+        <label>Join priority<select id="wall-join-priority">
+          <option value="left">First selected</option>
+          <option value="right">Second selected</option>
+        </select></label>
+        <button id="join-walls">Join walls (WJ)</button>
+        <label>Wall layers (material:thickness:category)<input id="wall-layers" type="text" value="Gypsum:0.013:gypsum,Insulation:0.09:insulation,Concrete:0.20:concrete"></label>
+        <button id="apply-wall-layers">Apply wall layers (WL)</button>
+        <label>Slab layers (material:thickness:category)<input id="slab-layers" type="text" value="Finish:0.02:finish,Concrete:0.20:concrete"></label>
+        <button id="apply-slab-layers">Apply slab layers (SL)</button>
+        <label>Slab vertex elevations (m)<input id="slab-elevations" type="text" value="0,0,0,0"></label>
+        <button id="apply-slab-shape">Apply slab shape (SE)</button>
+        <label>Shaft X (m)<input id="shaft-x" type="number" step="0.1" value="3"></label>
+        <label>Shaft Y (m)<input id="shaft-y" type="number" step="0.1" value="2"></label>
+        <label>Shaft width (m)<input id="shaft-width" type="number" min="0.1" step="0.1" value="1"></label>
+        <label>Shaft depth (m)<input id="shaft-depth" type="number" min="0.1" step="0.1" value="1"></label>
+        <button id="add-shaft-opening">Add shaft opening (SO)</button>
+        <label>Hosted offset (m)<input id="host-offset" type="number" min="0" step="0.1" value="1"></label>
+        <label>Hosted sill (m)<input id="host-sill" type="number" min="0" step="0.1" value="0"></label>
+        <button id="rehost-element">Rehost door/window (RH)</button>
+        <div id="authoring-status">Modify ready</div>
         <button id="delete">Delete element</button>
       </aside>
     </main>
