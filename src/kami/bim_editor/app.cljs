@@ -3,6 +3,7 @@
                                   [bim.integration :as family]
                                   [bim.drawing :as drawing] [ifc.core :as ifc]
                                   [kami.bim-editor.integration :as integration]
+                                  [kami.bim-editor.family-editor :as family-editor]
                                   [kami.bim-editor.interaction :as interaction]
                                   [kami.bim-editor.project :as project] [kami.webgpu.mesh :as gpu]))
 (defn wall [id a b] (bim/wall {:id id :name (str "Wall " id) :start a :end b :thickness 0.25 :height 3.2 :material "Concrete"}))
@@ -13,11 +14,13 @@
      {:id "casework" :name "Casework" :category :furniture
       :parameters {:width {:type :length :scope :type :default 0.8 :min 0.3}
                    :depth {:type :length :scope :instance :default 0.6 :min 0.2}
-                   :height {:type :length :scope :instance :default 0.9 :min 0.2 :max 3.0}}
+                   :height {:type :length :scope :instance :default 0.9 :min 0.2 :max 3.0}
+                   :finish {:type :material :scope :instance :default "Oak"}}
       :formulas {:volume [:* [:param :width] [:param :depth] [:param :height]]}
       :types {:standard {:id "casework-standard" :name "Standard" :parameters {:width 0.8}}
               :wide {:id "casework-wide" :name "Wide" :parameters {:width 1.2}}}
       :template {:kind :furniture :name "Casework" :global-id nil
+                 :material [:material-param :finish]
                  :placement {:location [0 0 0]}
                  :geometry {:kind :extruded-area-solid
                             :profile {:kind :rectangle :x-dim [:param :width]
@@ -55,6 +58,28 @@
 (defn- selected-family []
   (get-in @state [:family-catalog :family-catalog/families
                   (.-value (.getElementById js/document "family-definition"))]))
+(defn- refresh-family-definitions! []
+  (let [select (.getElementById js/document "family-definition")
+        selected (.-value select)
+        families (get-in @state [:family-catalog :family-catalog/families])]
+    (set! (.-innerHTML select) "")
+    (doseq [[family-id definition] (sort-by key families)]
+      (let [option (.createElement js/document "option")]
+        (set! (.-value option) family-id)
+        (set! (.-textContent option) (:family/name definition))
+        (.appendChild select option)))
+    (when (contains? families selected) (set! (.-value select) selected))))
+(defn- load-family-form! []
+  (when-let [definition (selected-family)]
+    (let [parameter #(get-in definition [:family/parameters % :default])]
+      (set! (.-value (.getElementById js/document "family-id")) (:family/id definition))
+      (set! (.-value (.getElementById js/document "family-name")) (:family/name definition))
+      (set! (.-value (.getElementById js/document "family-category")) (name (:family/category definition)))
+      (set! (.-value (.getElementById js/document "family-width")) (parameter :width))
+      (set! (.-value (.getElementById js/document "family-depth")) (parameter :depth))
+      (set! (.-value (.getElementById js/document "family-height")) (parameter :height))
+      (set! (.-value (.getElementById js/document "family-material")) (parameter :finish))
+      (set! (.-checked (.getElementById js/document "family-shared")) (:family/shared? definition)))))
 (defn- refresh-family-types! []
   (let [select (.getElementById js/document "family-type") family (selected-family)]
     (set! (.-innerHTML select) "")
@@ -62,7 +87,8 @@
       (let [option (.createElement js/document "option")]
         (set! (.-value option) (name type-key))
         (set! (.-textContent option) (or (:name type-spec) (name type-key)))
-        (.appendChild select option)))))
+        (.appendChild select option)))
+    (load-family-form!)))
 (defn- mesh [] (bim/merge-meshes (keep bim/element-mesh (all-elements))))
 (defn- element-rows []
   (mapcat (fn [storey]
@@ -528,14 +554,63 @@
  (.addEventListener (.getElementById js/document "analyze-structure") "click" analyze-structure!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "family-definition") "change" refresh-family-types!)
+ (refresh-family-definitions!)
  (refresh-family-types!)
+ (.addEventListener (.getElementById js/document "save-family-definition") "click"
+                    #(try
+                       (let [id (.-value (.getElementById js/document "family-id"))
+                             existing (get-in @state [:family-catalog :family-catalog/families
+                                                      (family-editor/family-key id)])
+                             definition
+                             (family-editor/box-family
+                              {:id id
+                               :name (.-value (.getElementById js/document "family-name"))
+                               :category (keyword (.-value (.getElementById js/document "family-category")))
+                               :width (num "family-width") :depth (num "family-depth")
+                               :height (num "family-height")
+                               :material (.-value (.getElementById js/document "family-material"))
+                               :shared? (.-checked (.getElementById js/document "family-shared"))
+                               :types (:family/types existing)})]
+                         (swap! state update :family-catalog family-editor/upsert-family definition)
+                         (refresh-family-definitions!)
+                         (set! (.-value (.getElementById js/document "family-definition"))
+                               (:family/id definition))
+                         (refresh-family-types!)
+                         (set! (.-textContent (.getElementById js/document "family-status"))
+                               (str "Saved " (:family/name definition))))
+                       (catch :default error
+                         (set! (.-textContent (.getElementById js/document "family-status"))
+                               (str "Error: " (.-message error))))))
+ (.addEventListener (.getElementById js/document "save-family-type") "click"
+                    #(try
+                       (let [family-id (.-value (.getElementById js/document "family-definition"))
+                             type-name (.-value (.getElementById js/document "family-type-name"))]
+                         (swap! state update :family-catalog family-editor/upsert-type
+                                family-id type-name (num "family-width"))
+                         (refresh-family-types!)
+                         (set! (.-value (.getElementById js/document "family-type"))
+                               (family-editor/family-key type-name))
+                         (set! (.-textContent (.getElementById js/document "family-status"))
+                               (str "Saved type " type-name)))
+                       (catch :default error
+                         (set! (.-textContent (.getElementById js/document "family-status"))
+                               (str "Error: " (.-message error))))))
  (.addEventListener (.getElementById js/document "add-family-instance") "click"
                     #(let [id (:next-id @state)
                            family-id (.-value (.getElementById js/document "family-definition"))
                            type-key (keyword (.-value (.getElementById js/document "family-type")))
+                           definition (selected-family)
+                           params (:family/parameters definition)
+                           overrides (cond-> {}
+                                       (contains? params :depth) (assoc :depth (num "family-depth"))
+                                       (contains? params :height) (assoc :height (num "family-height"))
+                                       (contains? params :finish)
+                                       (assoc :finish (.-value (.getElementById js/document "family-material"))))
                            instance (family/instantiate-family-type
                                      (:family-catalog @state) family-id type-key id
-                                     {:depth (num "family-depth") :height (num "family-height")})]
+                                     overrides
+                                     {:detail-level
+                                      (keyword (.-value (.getElementById js/document "family-detail")))})]
                        (swap! state update :next-id inc)
                        (select-only! id)
                        (commit! (bim/add-element (:project @state) (:active-storey @state) instance))))
