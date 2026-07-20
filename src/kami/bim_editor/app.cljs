@@ -670,6 +670,50 @@
         (set! (.-textContent (.getElementById js/document "engineering-status"))
               (str (count segments) " routed segments"))
         (commit! project)))))
+(defn- add-mep-equipment! []
+  (try
+    (let [id (:next-id @state)
+          point (parse-point "mep-equipment-point")
+          kind (keyword (.-value (.getElementById js/document "mep-equipment-kind")))
+          domain (keyword (.-value (.getElementById js/document "mep-connector-domain")))
+          size (num "mep-connector-size")
+          connector-id (str "equipment-" id "-port")
+          flow (if (= :pump kind) :out :in)
+          connector (family/mep-connector
+                     {:id connector-id :point point
+                      :direction (if (= :out flow) [1 0 0] [-1 0 0])
+                      :domain domain :shape :round :size size :flow-direction flow})
+          equipment (family/mep-equipment
+                     {:id id :name (str (name kind) " " id) :kind kind
+                      :system-id (if (= :hvac domain) :supply-air :hydronic)
+                      :connectors [connector]
+                      :geometry {:kind :swept-disk-solid
+                                 :directrix [point (mapv + point [0.4 0 0])]
+                                 :radius (max 0.1 size)}})]
+      (swap! state update :next-id inc)
+      (select-only! id)
+      (commit! (bim/add-element (:project @state) (:active-storey @state) equipment))
+      (set! (.-value (.getElementById js/document "mep-connector-a")) connector-id)
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Added " (name kind) " · " connector-id)))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Error: " (.-message error))))))
+(defn- connect-mep-elements! []
+  (try
+    (let [connector-a (.-value (.getElementById js/document "mep-connector-a"))
+          connector-b (.-value (.getElementById js/document "mep-connector-b"))
+          result (family/connect-mep-elements (all-elements) connector-a connector-b)
+          project (reduce (fn [project element]
+                            (bim/update-element project (element-storey-id (:id element))
+                                                (:id element) (constantly element)))
+                          (:project @state) (:mep/elements result))]
+      (commit! project)
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Connected " connector-a " ↔ " connector-b)))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Error: " (.-message error))))))
 (defn- editable-target? [event]
   (let [target (.-target event) tag (some-> target .-tagName .toLowerCase)]
     (or (#{"input" "select" "textarea"} tag) (.-isContentEditable target))))
@@ -909,6 +953,10 @@
  (.addEventListener (.getElementById js/document "run-structural-analysis") "click"
                     run-structural-analysis!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
+ (.addEventListener (.getElementById js/document "add-mep-equipment") "click"
+                    add-mep-equipment!)
+ (.addEventListener (.getElementById js/document "connect-mep-elements") "click"
+                    connect-mep-elements!)
  (.addEventListener (.getElementById js/document "save-drawing-annotation") "click"
                     save-drawing-annotation!)
  (.addEventListener (.getElementById js/document "new-drawing-annotation") "click"
