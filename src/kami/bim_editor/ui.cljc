@@ -105,6 +105,8 @@
        [:label "Points (x,y; …)" [:input {:id "drawing-annotation-points" :value "0,0;6,0"}]]
        [:label "Text" [:input {:id "drawing-annotation-text" :value "Note"}]]
        [:label "Revision" [:input {:id "drawing-annotation-revision" :value "P01"}]]
+       [:label "Tag family" [:select {:id "annotation-family"}]]
+       [:button {:id "auto-tag-elements"} "Auto-tag matching elements"]
        [:button.primary {:id "save-drawing-annotation"} "Add annotation"]
        [:button {:id "new-drawing-annotation"} "New annotation"]
        [:div {:id "drawing-annotations"}]
