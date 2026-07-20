@@ -684,7 +684,15 @@
                          (fn []
                            (let [walls (filterv #(= :wall (:kind %)) (selected-elements))]
                              (when (= 2 (count walls))
-                               (when-let [[left right] (operation (first walls) (second walls))]
+                               (when-let [[left right]
+                                          (if (= button-id "join-walls")
+                                            (operation
+                                             (first walls) (second walls)
+                                             {:style (keyword (.-value (.getElementById js/document
+                                                                                         "wall-join-style")))
+                                              :priority (keyword (.-value (.getElementById js/document
+                                                                                            "wall-join-priority")))})
+                                            (operation (first walls) (second walls)))]
                                  (-> (:project @state)
                                      (bim/update-element (element-storey-id (:id left)) (:id left)
                                                          (constantly left))

@@ -114,6 +114,12 @@
        [:label "Wall offset (m)" [:input {:id "wall-offset" :type "number" :step 0.1 :value 0.2}]]
        [:button {:id "offset-walls"} "Offset walls (OF)"]
        [:button {:id "trim-walls"} "Trim / Extend walls (TR)"]
+       [:label "Join style" [:select {:id "wall-join-style"}
+                              [:option {:value "butt"} "Butt / clean solids"]
+                              [:option {:value "centerline"} "Centerline"]]]
+       [:label "Join priority" [:select {:id "wall-join-priority"}
+                                 [:option {:value "left"} "First selected"]
+                                 [:option {:value "right"} "Second selected"]]]
        [:button {:id "join-walls"} "Join walls (WJ)"]
        [:label "Wall layers (material:thickness:category)"
         [:input {:id "wall-layers" :type "text"
