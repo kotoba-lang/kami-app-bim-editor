@@ -46,6 +46,7 @@
                       :selected-clash nil :family-catalog (initial-family-catalog)
                       :structural-model nil :structural-overlay nil
                       :mep-systems [] :review-topics [] :cloud-state nil
+                      :cloud-workspace nil :cloud-checkpoint nil :cloud-sync-ack nil
                       :stream-settings {:cell-size 10.0 :batch-size 512
                                         :max-resident 10000 :max-loads 1000}
                       :stream-view nil
@@ -1091,6 +1092,8 @@
                        :mep-systems (:mep-systems @state)
                        :review-topics (:review-topics @state)
                        :cloud-state (:cloud-state @state)
+                       :cloud-workspace (:cloud-workspace @state)
+                       :cloud-checkpoint (:cloud-checkpoint @state)
                        :stream-settings (:stream-settings @state)
                        :editor {:active-storey active-storey :selected selected
                                 :selection (vec (selection-ids))}
@@ -1127,6 +1130,8 @@
            :mep-systems (:project/mep-systems p)
            :review-topics (:project/review-topics p)
            :cloud-state (:project/cloud-state p)
+           :cloud-workspace (:project/cloud-workspace p)
+           :cloud-checkpoint (:project/cloud-checkpoint p)
            :stream-settings (merge {:cell-size 10.0 :batch-size 512
                                     :max-resident 10000 :max-loads 1000}
                                    (:project/stream-settings p))
@@ -1216,7 +1221,7 @@
             (count (:stream/evict delta)) " evict")))
     (catch :default error
       (workspace-status! (str "LOD error: " (.-message error))))))
-(defn- publish-opencde! []
+(defn- publish-local-opencde! []
   (try
     (let [actor "bim-editor"
           project-id (:project-id @state)
@@ -1254,6 +1259,48 @@
             " · " (count (:opencde/results topics)) " BCF topics")))
     (catch :default error
       (workspace-status! (str "OpenCDE error: " (.-message error))))))
+(defn- publish-opencde! []
+  (try
+    (let [actor "bim-editor"
+          project (assoc (coordinated-project)
+                         :id (:project-id @state) :name (:project-name @state))
+          package (integration/cloud-sync-package
+                   (:cloud-workspace @state) (:cloud-checkpoint @state) project actor)
+          request (integration/cloud-sync-request
+                   {:base-url (.-value (.getElementById js/document "cloud-base-url"))
+                    :org (.-value (.getElementById js/document "cloud-org"))
+                    :repo (.-value (.getElementById js/document "cloud-repo"))
+                    :cacao (.-value (.getElementById js/document "cloud-cacao"))}
+                   (:envelope package))]
+      (workspace-status! "Synchronizing durable BIM revision…")
+      (-> (js/fetch
+           (:url request)
+           #js {:method (:method request)
+                :headers (clj->js (:headers request))
+                :body (js/JSON.stringify (clj->js (:body request)))})
+          (.then (fn [response]
+                   (-> (.json response)
+                       (.then (fn [body]
+                                (if (.-ok response)
+                                  body
+                                  (throw (js/Error.
+                                          (or (aget body "reason")
+                                              (aget body "error")
+                                              (str "HTTP " (.-status response)))))))))))
+          (.then (fn [body]
+                   (let [ack (reader/read-string (aget body "ack-edn"))]
+                     (swap! state assoc
+                            :cloud-workspace (:workspace package)
+                            :cloud-checkpoint (:design/checkpoint ack)
+                            :cloud-sync-ack ack :save-status :dirty)
+                     (publish-local-opencde!)
+                     (workspace-status!
+                      (str "Cloud synced " (:design/head-revision ack)
+                           " · IFC + " (count (:review-topics @state)) " BCF topics")))))
+          (.catch (fn [error]
+                    (workspace-status! (str "Cloud sync error: " (.-message error)))))))
+    (catch :default error
+      (workspace-status! (str "Cloud sync error: " (.-message error))))))
 (defn- download-bcf! []
   (download-text! "building.bcf.json" "application/json"
                   (.stringify js/JSON (clj->js {:bcf/version "3.0"
