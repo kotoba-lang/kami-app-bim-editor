@@ -60,6 +60,7 @@
                 "title-block-drawn-by" "title-block-checked-by"
                 "generate-drawing-set" "drawing-set-status"
                 "drawing-format" "export-drawing" "import-ifc-file"
+                "cloud-base-url" "cloud-org" "cloud-repo" "cloud-cacao"
                 "publish-opencde" "export-bcf" "refresh-stream" "workspace-status"]]
       (is (string/includes? page (str "id=\"" id "\""))))
     (is (string/includes? page "value=\"pdf\""))

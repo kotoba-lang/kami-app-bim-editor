@@ -1,6 +1,7 @@
 (ns kami.bim-editor.integration
   "Application boundary for publishing one coordinated design revision."
-  (:require [bim.integration :as bim-integration]
+  (:require [clojure.string :as string]
+            [bim.integration :as bim-integration]
             [bim.interchange :as interchange]
             [bim.spatial :as spatial]))
 
@@ -83,6 +84,58 @@
 
 (defn import-ifc-spf [text]
   (bim-integration/import-ifc-spf text))
+
+(defn advance-cloud-workspace
+  "Create or advance the durable collaboration history to `project`.
+  A whole top-level semantic field is represented by one deterministic event;
+  unchanged retries return the same workspace and revision id."
+  [workspace project actor]
+  (let [workspace (or workspace (bim-integration/collaboration-workspace project))
+        branch (:collab/default-branch workspace)
+        head (get-in workspace [:collab/branches branch])
+        previous (get-in workspace [:collab/revisions head :revision/document])]
+    (if (= previous project)
+      workspace
+      (let [clock (inc (reduce max 0 (keep :revision/clock
+                                           (vals (:collab/revisions workspace)))))
+            revision-id (str "editor-" clock)
+            keys* (sort-by str (into (set (keys previous)) (keys project)))
+            events (->> keys*
+                        (keep-indexed
+                         (fn [index key]
+                           (when (not= (get previous key ::missing)
+                                       (get project key ::missing))
+                             (bim-integration/change-event
+                              {:id (str revision-id "-" index) :actor actor :clock clock
+                               :operation (if (contains? project key) :assoc :dissoc)
+                               :path [key] :value (get project key)}))))
+                        vec)]
+        (bim-integration/commit-design-revision
+         workspace {:id revision-id :branch branch :base-revision head
+                    :actor actor :clock clock :message "BIM editor publish"
+                    :events events})))))
+
+(defn cloud-sync-package
+  "Return the advanced workspace and exact replay delta sent to cloud-itonami."
+  [workspace checkpoint project actor]
+  (let [workspace (advance-cloud-workspace workspace project actor)
+        checkpoint (or checkpoint {:sync/revisions #{}})]
+    {:workspace workspace
+     :envelope (bim-integration/cloud-itonami-sync-payload workspace checkpoint)}))
+
+(defn cloud-sync-request
+  "Build the browser HTTP request without exposing fetch to shared code."
+  [{:keys [base-url org repo cacao]} envelope]
+  (when-not (and (string? base-url) (seq base-url)
+                 (string? org) (seq org) (string? repo) (seq repo)
+                 (string? cacao) (seq cacao))
+    (throw (ex-info "cloud-itonami endpoint and CACAO are required" {})))
+  {:url (str (string/replace base-url #"/+$" "")
+             "/api/" org "/" repo "/design/sync")
+   :method "POST"
+   :headers {"content-type" "application/json"
+             "authorization" (str "CACAO " cacao)}
+   :body {:envelopeEdn (pr-str envelope)}})
 
 (defn cloud-opencde-publication
   "Build the exact wire package consumed by cloud-itonami.design-opencde.

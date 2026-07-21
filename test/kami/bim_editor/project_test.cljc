@@ -4,12 +4,14 @@
 (deftest round-trip
   (let [p (project/document {:id "house" :name "House" :building-model model :editor {:active-storey 3 :selected nil}
                              :camera {:azimuth 1 :elevation 0.5} :interaction {:profile :revit}})]
-    (is (project/valid? p)) (is (= p (project/open p))) (is (= 7 (:kami/version p)))
+    (is (project/valid? p)) (is (= p (project/open p))) (is (= 8 (:kami/version p)))
     (is (= {} (:project/drawings p))) (is (= {} (:project/drawing-set p)))
     (is (= {} (:project/print-setting p)))
     (is (nil? (:project/structural-model p)))
     (is (= [] (:project/mep-systems p)))
     (is (= [] (:project/review-topics p)))
+    (is (nil? (:project/cloud-workspace p)))
+    (is (nil? (:project/cloud-checkpoint p)))
     (is (= {} (:project/stream-settings p)))))
 (deftest version-two-migration
   (let [old (assoc (project/document {:id "old" :building-model model :editor {}

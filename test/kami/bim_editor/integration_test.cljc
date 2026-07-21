@@ -1,5 +1,6 @@
 (ns kami.bim-editor.integration-test
   (:require [clojure.test :refer [deftest is]]
+            #?(:clj [clojure.edn :as edn] :cljs [cljs.reader :as edn])
             [bim]
             [ifc.core :as ifc]
             [pdf.core :as pdf]
@@ -101,6 +102,29 @@
     (is (= 2 (get-in package [:topics 0 :expected-revision])))
     (is (= "house-1:main-42:bcf:clash-1:2"
            (get-in package [:topics 0 :idempotency-key])))))
+
+(deftest advances-and-serializes-replay-safe-cloud-sync
+  (let [initial (assoc (model) :id "house-1" :name "House")
+        first-package (integration/cloud-sync-package nil nil initial "architect")
+        first-envelope (:envelope first-package)
+        checkpoint {:sync/revisions (set (keys (:design/revisions first-envelope)))}
+        changed (assoc initial :description "Issued")
+        second-package (integration/cloud-sync-package (:workspace first-package)
+                                                       checkpoint changed "architect")
+        replay (integration/cloud-sync-package (:workspace second-package)
+                                               checkpoint changed "architect")
+        request (integration/cloud-sync-request
+                 {:base-url "https://itonami.cloud/" :org "acme" :repo "tower"
+                  :cacao "signed"}
+                 (:envelope second-package))]
+    (is (= :design/collaboration-synchronized (:itonami/event first-envelope)))
+    (is (= "editor-1" (get-in second-package [:envelope :design/head-revision])))
+    (is (= (:workspace second-package) (:workspace replay)))
+    (is (= (:envelope second-package) (:envelope replay)))
+    (is (= "https://itonami.cloud/api/acme/tower/design/sync" (:url request)))
+    (is (= "CACAO signed" (get-in request [:headers "authorization"])))
+    (is (= (:envelope second-package)
+           (-> request :body :envelopeEdn edn/read-string)))))
 
 (deftest exports-pdf-and-dxf-through-shared-libraries
   (let [project (model)
