@@ -84,6 +84,36 @@
 (defn import-ifc-spf [text]
   (bim-integration/import-ifc-spf text))
 
+(defn cloud-opencde-publication
+  "Build the exact wire package consumed by cloud-itonami.design-opencde.
+  The IFC document is bound to the collaboration envelope's durable head;
+  topic revisions and idempotency keys remain stable across retries."
+  [sync-payload {:keys [document-id name content-ref content-hash base-version
+                        timestamp topic-revisions topics]}]
+  (when-not (= :design/collaboration-synchronized (:itonami/event sync-payload))
+    (throw (ex-info "OpenCDE publication requires collaboration sync payload" {})))
+  (let [project-id (:design/project-id sync-payload)
+        head (:design/head-revision sync-payload)]
+    (when-not (and project-id head document-id name content-ref content-hash
+                   (integer? base-version) (<= 0 base-version))
+      (throw (ex-info "incomplete cloud OpenCDE publication metadata"
+                      {:project-id project-id :head head :document-id document-id})))
+    {:document {:project-id project-id :design-revision head
+                :document-id document-id :name name :media-type "application/ifc"
+                :content-ref content-ref :content-hash content-hash
+                :base-version base-version
+                :idempotency-key (str project-id ":" head ":ifc:" content-hash)
+                :metadata {:design/revision head} :timestamp timestamp}
+     :topics
+     (mapv (fn [topic]
+             (let [guid (:bcf.topic/guid topic)
+                   revision (get topic-revisions guid 0)]
+               (when-not guid
+                 (throw (ex-info "OpenCDE topic requires BCF guid" {:topic topic})))
+               {:guid guid :topic topic :expected-revision revision
+                :idempotency-key (str project-id ":" head ":bcf:" guid ":" revision)}))
+           topics)}))
+
 (defn export-drawing
   "Export an active floor plan or the full storey set through shared formats."
   ([project active-storey-id format]

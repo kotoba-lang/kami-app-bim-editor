@@ -85,6 +85,23 @@
         text (ifc/write-spf (integration/coordinated-ifc source))]
     (is (= source (integration/import-ifc-spf text)))))
 
+(deftest binds-cloud-opencde-publication-to-durable-collaboration-head
+  (let [sync {:itonami/event :design/collaboration-synchronized
+              :design/project-id "house-1" :design/head-revision "main-42"}
+        topic {:bcf.topic/guid "clash-1" :bcf.topic/title "Clash"}
+        package (integration/cloud-opencde-publication
+                 sync {:document-id "federated-ifc" :name "House.ifc"
+                       :content-ref "blob://ifc/main-42" :content-hash "sha256:42"
+                       :base-version 4 :timestamp 100
+                       :topic-revisions {"clash-1" 2} :topics [topic]})]
+    (is (= "house-1" (get-in package [:document :project-id])))
+    (is (= "main-42" (get-in package [:document :design-revision])))
+    (is (= "house-1:main-42:ifc:sha256:42"
+           (get-in package [:document :idempotency-key])))
+    (is (= 2 (get-in package [:topics 0 :expected-revision])))
+    (is (= "house-1:main-42:bcf:clash-1:2"
+           (get-in package [:topics 0 :idempotency-key])))))
+
 (deftest exports-pdf-and-dxf-through-shared-libraries
   (let [project (model)
         drawings {3 {:view/annotations
