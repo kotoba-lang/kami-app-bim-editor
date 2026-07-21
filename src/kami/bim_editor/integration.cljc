@@ -1,11 +1,20 @@
 (ns kami.bim-editor.integration
   "Application boundary for publishing one coordinated design revision."
   (:require [bim.integration :as bim-integration]
-            [bim.interchange :as interchange]))
+            [bim.interchange :as interchange]
+            [bim.spatial :as spatial]))
+
+(defn coordinated-model
+  "Attach editor-owned analytical/system state to the authored building before
+  IFC, CDE, drawing, or cloud publication."
+  [project structural-model mep-systems]
+  (cond-> (assoc project :mep/systems (vec mep-systems))
+    structural-model (assoc :structural/model structural-model)))
 
 (defn coordinated-revision
-  [{:keys [project project-id project-name revision events]}]
-  {:kami/document :coordinated-bim-revision
+  [{:keys [project project-id project-name revision events structural-model mep-systems]}]
+  (let [project (coordinated-model project structural-model mep-systems)]
+    {:kami/document :coordinated-bim-revision
    :kami/version 1
    :project/id project-id
    :project/name project-name
@@ -16,7 +25,41 @@
    :project/drawings (bim-integration/generate-drawing-set project)
    :project/ifc (bim-integration/export-ifc project)
    :project/collaboration {:events (vec events)}
-   :project/cloud-itonami (bim-integration/cloud-itonami-payload project revision)})
+     :project/cloud-itonami (bim-integration/cloud-itonami-payload project revision)}))
+
+(defn model-bounds
+  "Return the tight world-space AABB for renderable or metadata-only elements."
+  [elements]
+  (when-let [bounds (seq (keep spatial/element-bounds elements))]
+    {:min (apply mapv min (map :min bounds))
+     :max (apply mapv max (map :max bounds))}))
+
+(defn large-model-view
+  "Build a metadata-first visible-set plan suitable for WebGPU workers."
+  [elements view-bounds camera-position focal-length-px
+   {:keys [cell-size batch-size max-resident max-loads]
+    :or {cell-size 10.0 batch-size 512 max-resident 10000 max-loads 1000}}]
+  (let [index (spatial/build-index elements {:cell-size cell-size})
+        plan (spatial/stream-plan index view-bounds camera-position focal-length-px
+                                  batch-size {:include-elements? false})
+        delta (spatial/stream-delta (spatial/stream-session) plan
+                                    {:max-resident max-resident :max-loads max-loads})]
+    {:workspace/spatial-index index :workspace/query (spatial/query-report index view-bounds)
+     :workspace/stream-plan plan :workspace/stream-delta delta}))
+
+(defn capability-status
+  "Summarize whether each integrated workspace discipline has publishable
+  state, so UI and automation share the same readiness rules."
+  [{:keys [project family-catalog structural-model mep-systems drawing-set
+           review-topics cloud-state]}]
+  {:architecture (boolean project)
+   :families (boolean (seq (:family-catalog/families family-catalog)))
+   :structure (boolean structural-model)
+   :mep (boolean (seq mep-systems))
+   :drawings (boolean (seq (:drawing/views drawing-set)))
+   :coordination (boolean (seq review-topics))
+   :opencde (boolean cloud-state)
+   :ifc (boolean project)})
 
 (defn apply-remote-events [project events]
   (bim-integration/merge-events project events))

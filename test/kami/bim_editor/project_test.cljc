@@ -4,9 +4,13 @@
 (deftest round-trip
   (let [p (project/document {:id "house" :name "House" :building-model model :editor {:active-storey 3 :selected nil}
                              :camera {:azimuth 1 :elevation 0.5} :interaction {:profile :revit}})]
-    (is (project/valid? p)) (is (= p (project/open p))) (is (= 6 (:kami/version p)))
+    (is (project/valid? p)) (is (= p (project/open p))) (is (= 7 (:kami/version p)))
     (is (= {} (:project/drawings p))) (is (= {} (:project/drawing-set p)))
-    (is (= {} (:project/print-setting p)))))
+    (is (= {} (:project/print-setting p)))
+    (is (nil? (:project/structural-model p)))
+    (is (= [] (:project/mep-systems p)))
+    (is (= [] (:project/review-topics p)))
+    (is (= {} (:project/stream-settings p)))))
 (deftest version-two-migration
   (let [old (assoc (project/document {:id "old" :building-model model :editor {}
                                       :camera {} :interaction {}})
@@ -15,8 +19,18 @@
       (is (= {} (:project/family-catalog migrated)))
       (is (= {} (:project/drawings migrated)))
       (is (= {} (:project/drawing-set migrated)))
-      (is (= {} (:project/print-setting migrated))))))
+      (is (= {} (:project/print-setting migrated)))
+      (is (= [] (:project/mep-systems migrated)))
+      (is (= [] (:project/review-topics migrated))))))
 (deftest legacy-migration (let [p (project/open model)] (is (= model (:project/building-model p))) (is (= 3 (get-in p [:project/editor :active-storey])))))
+
+(deftest imported-coordinated-model-restores-discipline-state
+  (let [structure {:structural/nodes []}
+        system {:mep/id :hydronic}
+        p (project/open (assoc model :structural/model structure :mep/systems [system]))]
+    (is (= model (:project/building-model p)))
+    (is (= structure (:project/structural-model p)))
+    (is (= [system] (:project/mep-systems p)))))
 (deftest rejects-invalid
   (is (thrown? #?(:clj Exception :cljs js/Error) (project/open {:sites []})))
   (is (thrown? #?(:clj Exception :cljs js/Error) (project/open {:kami/document :bim-editor-project :kami/version 99}))))

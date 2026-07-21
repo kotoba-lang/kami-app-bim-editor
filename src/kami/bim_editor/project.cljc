@@ -1,6 +1,7 @@
 (ns kami.bim-editor.project)
-(def current-version 6)
+(def current-version 7)
 (defn document [{:keys [id name building-model family-catalog drawings drawing-set print-setting
+                        structural-model mep-systems review-topics cloud-state stream-settings
                         editor camera interaction]}]
   {:kami/document :bim-editor-project :kami/version current-version
    :project/id (or id "untitled-bim") :project/name (or name "Untitled BIM")
@@ -8,27 +9,46 @@
    :project/drawings (or drawings {})
    :project/drawing-set (or drawing-set {})
    :project/print-setting (or print-setting {})
+   :project/structural-model structural-model
+   :project/mep-systems (vec mep-systems)
+   :project/review-topics (vec review-topics)
+   :project/cloud-state cloud-state
+   :project/stream-settings (or stream-settings {})
    :project/editor editor :project/camera camera :project/interaction interaction})
 (defn migrate [v]
   (cond
     (= :bim-editor-project (:kami/document v))
-    (case (:kami/version v) 6 v
-      5 (assoc v :kami/version 6 :project/drawing-set {})
-      4 (assoc v :kami/version 6 :project/print-setting {} :project/drawing-set {})
-      3 (assoc v :kami/version 6 :project/drawings {} :project/print-setting {}
-               :project/drawing-set {})
-      2 (-> v (assoc :kami/version 6 :project/family-catalog {} :project/drawings {}
+    (case (:kami/version v) 7 v
+      6 (assoc v :kami/version 7 :project/structural-model nil :project/mep-systems []
+               :project/review-topics [] :project/cloud-state nil :project/stream-settings {})
+      5 (assoc v :kami/version 7 :project/drawing-set {} :project/structural-model nil
+               :project/mep-systems [] :project/review-topics [] :project/cloud-state nil
+               :project/stream-settings {})
+      4 (assoc v :kami/version 7 :project/print-setting {} :project/drawing-set {}
+               :project/structural-model nil :project/mep-systems []
+               :project/review-topics [] :project/cloud-state nil :project/stream-settings {})
+      3 (assoc v :kami/version 7 :project/drawings {} :project/print-setting {}
+               :project/drawing-set {} :project/structural-model nil :project/mep-systems []
+               :project/review-topics [] :project/cloud-state nil :project/stream-settings {})
+      2 (-> v (assoc :kami/version 7 :project/family-catalog {} :project/drawings {}
                      :project/drawing-set {}
-                     :project/print-setting {}))
-      1 (-> v (assoc :kami/version 6 :project/interaction {:profile :revit}
+                     :project/print-setting {} :project/structural-model nil
+                     :project/mep-systems [] :project/review-topics []
+                     :project/cloud-state nil :project/stream-settings {}))
+      1 (-> v (assoc :kami/version 7 :project/interaction {:profile :revit}
                      :project/family-catalog {} :project/drawings {}
                      :project/drawing-set {}
-                     :project/print-setting {})
+                     :project/print-setting {} :project/structural-model nil
+                     :project/mep-systems [] :project/review-topics []
+                     :project/cloud-state nil :project/stream-settings {})
             (dissoc :project/version))
       (throw (ex-info "Unsupported BIM project version" {:version (:kami/version v)})))
     (and (map? v) (vector? (:sites v)))
     (let [storey (some-> v :sites first :buildings first :storeys first)]
-      (document {:building-model v :editor {:active-storey (:id storey) :selected (some-> storey :elements first :id)}
+      (document {:building-model (dissoc v :structural/model :mep/systems)
+                 :structural-model (:structural/model v)
+                 :mep-systems (:mep/systems v)
+                 :editor {:active-storey (:id storey) :selected (some-> storey :elements first :id)}
                  :camera {:azimuth 0.75 :elevation 0.5} :interaction {:profile :revit}}))
     :else (throw (ex-info "Not a BIM Editor project" {:value v}))))
 (defn valid? [p]
@@ -40,5 +60,8 @@
          (map? (:project/drawings p))
          (map? (:project/drawing-set p))
          (map? (:project/print-setting p))
+         (vector? (:project/mep-systems p))
+         (vector? (:project/review-topics p))
+         (map? (:project/stream-settings p))
          (map? (:project/editor p)) (map? (:project/camera p)) (map? (:project/interaction p)))))
 (defn open [v] (let [p (migrate v)] (when-not (valid? p) (throw (ex-info "Invalid BIM Editor project" {:project p}))) p))

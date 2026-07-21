@@ -59,7 +59,8 @@
                 "title-block-organization" "title-block-client"
                 "title-block-drawn-by" "title-block-checked-by"
                 "generate-drawing-set" "drawing-set-status"
-                "drawing-format" "export-drawing" "import-ifc-file"]]
+                "drawing-format" "export-drawing" "import-ifc-file"
+                "publish-opencde" "export-bcf" "refresh-stream" "workspace-status"]]
       (is (string/includes? page (str "id=\"" id "\""))))
     (is (string/includes? page "value=\"pdf\""))
     (is (string/includes? page "value=\"dxf\""))))
