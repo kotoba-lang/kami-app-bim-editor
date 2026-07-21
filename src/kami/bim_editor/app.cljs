@@ -1,8 +1,10 @@
 (ns kami.bim-editor.app (:require [cljs.reader :as reader] [clojure.string :as string] [bim]
                                   [bim.mep :as mep]
+                                  [bim.cloud :as cloud]
                                   [bim.editor :as editor]
                                   [bim.integration :as family]
                                   [bim.drawing :as drawing] [ifc.core :as ifc]
+                                  [kotoba.issue.bcf :as bcf]
                                   [kami.bim-editor.integration :as integration]
                                   [kami.bim-editor.family-editor :as family-editor]
                                   [kami.bim-editor.interaction :as interaction]
@@ -43,6 +45,10 @@
                       :selected-space nil :next-space-id 1000
                       :selected-clash nil :family-catalog (initial-family-catalog)
                       :structural-model nil :structural-overlay nil
+                      :mep-systems [] :review-topics [] :cloud-state nil
+                      :stream-settings {:cell-size 10.0 :batch-size 512
+                                        :max-resident 10000 :max-loads 1000}
+                      :stream-view nil
                       :history [] :future [] :azimuth 0.75 :elevation 0.5 :last-snap nil
                       :camera-target [4.0 1.5 3.0] :camera-distance 14.0
                       :profile :revit :shortcut-buffer "" :project-id "untitled-bim" :project-name "Untitled BIM"
@@ -57,7 +63,7 @@
                       :selected-annotation nil :next-annotation-id 1
                       :revision 0 :save-status :clean}))
 (defonce viewport (atom nil))
-(declare refresh! refresh-drawing-annotations!)
+(declare refresh! refresh-drawing-annotations! workspace-status!)
 (defn- storeys [] (:storeys (bim/find-building (:project @state) 2)))
 (defn- elements [] (:elements (bim/find-storey (:project @state) (:active-storey @state))))
 (defn- all-elements [] (mapcat :elements (storeys)))
@@ -186,6 +192,23 @@
                                                         :selected (:clash/a result)
                                                         :selection #{(:clash/a result)}) (refresh!)))
           (.appendChild container button))))))
+(defn- run-clash-check! []
+  (let [existing (into {} (map (juxt :bcf.topic/title identity)) (:review-topics @state))
+        created (.toISOString (js/Date.))
+        topics (mapv (fn [clash]
+                       (let [title (str "Clash " (:clash/a clash) " × " (:clash/b clash))]
+                         (or (get existing title)
+                             (bcf/topic
+                              {:guid (str (random-uuid)) :type "Clash" :status "Open"
+                               :title title
+                               :description (str "Overlap " (:clash/volume clash)
+                                                 " m³ on storey " (:clash/storey clash))
+                               :creation-date created :creation-author "bim-editor"
+                               :priority "Normal" :labels ["Clash"]}))))
+                     (clashes))]
+    (swap! state assoc :review-topics topics :save-status :dirty)
+    (refresh!)
+    (workspace-status! (str (count topics) " BCF clash topics ready"))))
 (defn- download-clashes! []
   (let [rows (clashes) data (str "storey,element_a,element_b,kind_a,kind_b,overlap_x,overlap_y,overlap_z,volume_m3\n"
                                  (string/join "\n" (map (fn [c] (string/join "," (concat [(:clash/storey c) (:clash/a c) (:clash/b c)]
@@ -284,9 +307,13 @@
            (-> s (update :history conj (:project s))
                (assoc :project p :future [] :save-status :dirty
                       :drawing-views (reassociate-drawing-views (:drawing-views s) p)
-                      :structural-model nil :structural-overlay nil)
+                      :structural-model nil :structural-overlay nil :stream-view nil)
                (update :revision inc))))
   (refresh!))
+(defn- retain-mep-system! [system]
+  (swap! state update :mep-systems
+         (fn [systems]
+           (conj (vec (remove #(= (:mep/id %) (:mep/id system)) systems)) system))))
 (defn- authoring-commit! [label operation]
   (try
     (if-let [project (operation)]
@@ -740,7 +767,8 @@
           (set! (.-textContent (.getElementById js/document "engineering-status"))
                 (str (count segments) " segments · " (count fittings)
                      " fittings · " (.toFixed loss 1) " Pa"))
-          (commit! project))))
+          (commit! project)
+          (retain-mep-system! system))))
     (catch :default error
       (set! (.-textContent (.getElementById js/document "engineering-status"))
             (str "Route error: " (.-message error))))))
@@ -808,6 +836,7 @@
       (swap! state update :next-id inc)
       (select-only! (:id (first segments)))
       (commit! project)
+      (retain-mep-system! system)
       (set! (.-textContent (.getElementById js/document "engineering-status"))
             (str "Branched network · " (count segments) " segments · "
                  (count fittings) " tee/fittings · " (.toFixed pressure 1)
@@ -865,6 +894,7 @@
           (swap! state update :next-id inc)
           (select-only! (:id (first segments)))
           (commit! project)
+          (retain-mep-system! system)
           (set! (.-textContent (.getElementById js/document "engineering-status"))
                 (str "Supply duct " width " × " height " m · "
                      (.toFixed (:mep/velocity-m-s sizing) 2) " m/s · "
@@ -961,12 +991,17 @@
                                :electrical/feeder-analysis feeder-analysis
                                :electrical/feeder-conductor feeder-conductor
                                :electrical/protection protection}})
+          system (family/mep-system
+                  {:id panel-id :name panel-id :kind :electrical
+                   :medium :electricity :design-flow total-load
+                   :equipment [panel]})
           breaker (get-in protection [:electrical.protection/device :rating-a])
           issue-count (+ (count (:panel/issues panel-analysis))
                          (count (:electrical.feeder/issues feeder-analysis)))]
       (swap! state update :next-id inc)
       (select-only! id)
       (commit! (bim/add-element (:project @state) (:active-storey @state) panel))
+      (retain-mep-system! system)
       (set! (.-textContent (.getElementById js/document "engineering-status"))
             (str "Panel " panel-id " · 3 circuits · feeder " feeder-area
                  " mm² · " breaker " A protection · imbalance "
@@ -1041,6 +1076,9 @@
                  "r" "rotate-element" "i" "mirror-element" "a" "array-element"}})
 (def ^:private storage-key "kami.bim-editor.project.v2")
 (def ^:private backup-key "kami.bim-editor.project.backup")
+(defn- coordinated-project []
+  (integration/coordinated-model (:project @state) (:structural-model @state)
+                                 (:mep-systems @state)))
 (defn- project-document []
   (let [{:keys [project-id project-name project active-storey selected azimuth elevation
                 camera-target camera-distance profile drawing-views drawing-set print-setting]} @state]
@@ -1049,6 +1087,11 @@
                        :drawings drawing-views
                        :drawing-set drawing-set
                        :print-setting print-setting
+                       :structural-model (:structural-model @state)
+                       :mep-systems (:mep-systems @state)
+                       :review-topics (:review-topics @state)
+                       :cloud-state (:cloud-state @state)
+                       :stream-settings (:stream-settings @state)
                        :editor {:active-storey active-storey :selected selected
                                 :selection (vec (selection-ids))}
                        :camera {:azimuth azimuth :elevation elevation :target camera-target
@@ -1079,6 +1122,15 @@
                    (get-in p [:project/family-catalog :family-catalog/families] {}))
            :drawing-views (:project/drawings p)
            :drawing-set (:project/drawing-set p)
+           :structural-model (:project/structural-model p)
+           :structural-overlay nil
+           :mep-systems (:project/mep-systems p)
+           :review-topics (:project/review-topics p)
+           :cloud-state (:project/cloud-state p)
+           :stream-settings (merge {:cell-size 10.0 :batch-size 512
+                                    :max-resident 10000 :max-loads 1000}
+                                   (:project/stream-settings p))
+           :stream-view nil
            :print-setting (if (seq (:project/print-setting p))
                             (:project/print-setting p)
                             (family/print-setting {:id :default :paper-size :a1
@@ -1115,7 +1167,9 @@
 (defn- download-project! []
   (let [bundle (integration/coordinated-revision
                 {:project (:project @state) :project-id (:project-id @state)
-                 :project-name (:project-name @state) :revision (:revision @state) :events []})
+                 :project-name (:project-name @state) :revision (:revision @state) :events []
+                 :structural-model (:structural-model @state)
+                 :mep-systems (:mep-systems @state)})
         a (.createElement js/document "a")
         url (.createObjectURL js/URL (js/Blob. #js [(pr-str bundle)] #js {:type "application/edn"}))]
     (set! (.-href a) url) (set! (.-download a) "building.coordinated-bim.edn")
@@ -1133,7 +1187,78 @@
     (.click a) (js/setTimeout #(.revokeObjectURL js/URL url) 0)))
 (defn- download-ifc! []
   (download-text! "building.ifc" "application/x-step"
-                  (ifc/write-spf (integration/coordinated-ifc (:project @state)))))
+                  (ifc/write-spf (integration/coordinated-ifc (coordinated-project)))))
+(defn- workspace-status! [message]
+  (set! (.-textContent (.getElementById js/document "workspace-status")) message))
+(defn- refresh-workspace-status! []
+  (let [status (integration/capability-status
+                {:project (:project @state) :family-catalog (:family-catalog @state)
+                 :structural-model (:structural-model @state)
+                 :mep-systems (:mep-systems @state) :drawing-set (:drawing-set @state)
+                 :review-topics (:review-topics @state) :cloud-state (:cloud-state @state)})
+        ready (count (filter true? (vals status)))]
+    (workspace-status! (str ready "/" (count status) " workspace capabilities ready"))))
+(defn- refresh-stream! []
+  (try
+    (let [target (:camera-target @state)
+          distance (:camera-distance @state)
+          camera (mapv + target [0.0 0.0 distance])
+          view (or (integration/model-bounds (all-elements))
+                   {:min (mapv #(- % 1.0) target) :max (mapv #(+ % 1.0) target)})
+          result (integration/large-model-view
+                  (vec (all-elements)) view camera 1000.0 (:stream-settings @state))
+          report (:workspace/query result)
+          delta (:workspace/stream-delta result)]
+      (swap! state assoc :stream-view result)
+      (workspace-status!
+       (str (:spatial/returned-elements report) " visible · "
+            (count (:stream/load delta)) " load · "
+            (count (:stream/evict delta)) " evict")))
+    (catch :default error
+      (workspace-status! (str "LOD error: " (.-message error))))))
+(defn- publish-opencde! []
+  (try
+    (let [actor "bim-editor"
+          project-id (:project-id @state)
+          timestamp (.now js/Date)
+          initial (or (:cloud-state @state)
+                      (cloud/register-opencde-project
+                       (cloud/opencde-store) actor
+                       {:id project-id :name (:project-name @state)
+                        :memberships {actor :admin "cloud-itonami" :viewer}
+                        :timestamp timestamp}))
+          text (ifc/write-spf (integration/coordinated-ifc (coordinated-project)))
+          existing (cloud/get-opencde-document initial project-id actor "federated-ifc")
+          base-version (or (:document/version existing) 0)
+          hash (cloud/checksum text)
+          document (cloud/publish-model-version
+                    initial project-id actor
+                    {:document-id "federated-ifc" :name (str (:project-name @state) ".ifc")
+                     :content-ref (str "local://" project-id "/ifc/" (inc base-version))
+                     :content-hash hash :base-version base-version
+                     :idempotency-key (str project-id ":ifc:" base-version ":" hash)
+                     :metadata {:design/revision (:revision @state)} :timestamp timestamp})
+          topic-heads (into {} (map (fn [entry]
+                                      [(get-in entry [:topic/value :bcf.topic/guid])
+                                       (:topic/revision entry)]))
+                            (cloud/list-opencde-topics (:opencde/state document)
+                                                       project-id actor))
+          topics (cloud/publish-bcf-topics
+                  (:opencde/state document) project-id actor (:review-topics @state)
+                  {:expected-revisions topic-heads
+                   :idempotency-prefix (str project-id ":bcf:" timestamp)
+                   :timestamp timestamp})]
+      (swap! state assoc :cloud-state (:opencde/state topics) :save-status :dirty)
+      (workspace-status!
+       (str "OpenCDE IFC v" (get-in document [:opencde/document :document/version])
+            " · " (count (:opencde/results topics)) " BCF topics")))
+    (catch :default error
+      (workspace-status! (str "OpenCDE error: " (.-message error))))))
+(defn- download-bcf! []
+  (download-text! "building.bcf.json" "application/json"
+                  (.stringify js/JSON (clj->js {:bcf/version "3.0"
+                                               :bcf/topics (:review-topics @state)})
+                              nil 2)))
 (defn- drawing-set-view-graphic [model drawing-set view-id]
   (let [view (first (filter #(= view-id (:view/id %)) (:drawing/views drawing-set)))
         schedule (first (filter #(= view-id (:schedule/id %))
@@ -1855,10 +1980,14 @@
  (.addEventListener (.getElementById js/document "import") "click" #(.click (.getElementById js/document "import-file")))
  (.addEventListener (.getElementById js/document "import-file") "change" import-project!)
  (.addEventListener (.getElementById js/document "export-schedule") "click" download-schedule!)
- (.addEventListener (.getElementById js/document "run-clashes") "click" refresh!)
+ (.addEventListener (.getElementById js/document "run-clashes") "click" run-clash-check!)
  (.addEventListener (.getElementById js/document "export-clashes") "click" download-clashes!)
  (.addEventListener (.getElementById js/document "export-ifc") "click" download-ifc!)
+ (.addEventListener (.getElementById js/document "publish-opencde") "click" publish-opencde!)
+ (.addEventListener (.getElementById js/document "export-bcf") "click" download-bcf!)
+ (.addEventListener (.getElementById js/document "refresh-stream") "click" refresh-stream!)
  (.addEventListener (.getElementById js/document "export-drawing") "click" download-drawing!)
  (.addEventListener (.getElementById js/document "import-ifc") "click" #(.click (.getElementById js/document "import-ifc-file")))
  (.addEventListener (.getElementById js/document "import-ifc-file") "change" import-ifc!)
- (.addEventListener (.getElementById js/document "export") "click" download-project!)))
+ (.addEventListener (.getElementById js/document "export") "click" download-project!)
+ (refresh-workspace-status!)))

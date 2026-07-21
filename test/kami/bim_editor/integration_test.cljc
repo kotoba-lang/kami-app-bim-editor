@@ -28,6 +28,58 @@
            (get-in bundle [:project/cloud-itonami :itonami/event])))
     (is (= 4 (get-in bundle [:project/cloud-itonami :design/revision])))))
 
+(deftest coordinates-analysis-and-mep-into-every-exchange-view
+  (let [structure {:structural/nodes [{:structural.node/id :n1}]}
+        system {:mep/id :supply :mep/segments [] :mep/fittings [] :mep/equipment []}
+        coordinated (integration/coordinated-model (model) structure [system])
+        bundle (integration/coordinated-revision
+                {:project (model) :project-id "house-1" :project-name "House"
+                 :revision 5 :events [] :structural-model structure
+                 :mep-systems [system]})]
+    (is (= structure (:structural/model coordinated)))
+    (is (= [system] (:mep/systems coordinated)))
+    (is (= structure (get-in bundle [:project/model :structural/model])))
+    (is (= [system] (get-in bundle [:project/model :mep/systems])))))
+
+(deftest reconciles-mep-member-snapshots-with-authored-model
+  (let [segment (assoc (bim/wall {:id 10 :name "Current" :start [0 0 0] :end [5 0 0]})
+                       :kind :mep-segment)
+        project (bim/update-element (model) 3 10 (constantly segment))
+        stale (assoc segment :name "Stale")
+        missing {:id 999 :kind :mep-fitting}
+        system {:mep/id :supply :mep/segments [stale] :mep/fittings [missing]
+                :mep/equipment []}
+        reconciled (first (integration/reconcile-mep-systems project [system]))]
+    (is (= "Current" (get-in reconciled [:mep/segments 0 :name])))
+    (is (empty? (:mep/fittings reconciled)))))
+
+(deftest plans-metadata-first-large-model-view
+  (let [elements [{:id 1 :spatial/bounds {:min [0 0 0] :max [1 1 1]}}
+                  {:id 2 :spatial/bounds {:min [20 20 0] :max [21 21 1]}}]
+        view (integration/large-model-view
+              elements {:min [-1 -1 -1] :max [5 5 5]} [0 0 10] 1000
+              {:cell-size 5 :batch-size 1 :max-resident 10 :max-loads 10})]
+    (is (= [1] (get-in view [:workspace/query :spatial/element-ids])))
+    (is (= 1 (count (get-in view [:workspace/stream-delta :stream/load]))))
+    (is (nil? (get-in view [:workspace/stream-plan 0 :stream/entries 0 :element])))))
+
+(deftest derives-tight-streaming-bounds-without-unbounded-grid-walks
+  (is (= {:min [-2 0 0] :max [4 5 3]}
+         (integration/model-bounds
+          [{:id 1 :spatial/bounds {:min [0 0 0] :max [4 2 3]}}
+           {:id 2 :spatial/bounds {:min [-2 1 1] :max [1 5 2]}}]))))
+
+(deftest reports-integrated-workspace-readiness
+  (let [status (integration/capability-status
+                {:project (model)
+                 :family-catalog {:family-catalog/families {:door {}}}
+                 :structural-model {:structural/nodes []}
+                 :mep-systems [{:mep/id :supply}]
+                 :drawing-set {:drawing/views [{:view/id :plan}]}
+                 :review-topics [{:bcf.topic/guid "topic"}]
+                 :cloud-state {:opencde/projects {}}})]
+    (is (every? true? (vals status)))))
+
 (deftest imports-shared-ifc-spf
   (let [source (model)
         text (ifc/write-spf (integration/coordinated-ifc source))]

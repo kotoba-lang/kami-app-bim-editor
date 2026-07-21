@@ -19,6 +19,10 @@
       [:button {:id "export"} "Export Project"] [:button {:id "export-ifc"} "Export IFC"]
       [:button {:id "import-ifc"} "Import IFC"]
       [:input {:id "import-ifc-file" :type "file" :accept ".ifc" :style {:display "none"}}]
+      [:button {:id "publish-opencde"} "Publish OpenCDE"]
+      [:button {:id "export-bcf"} "Export BCF"]
+      [:button {:id "refresh-stream"} "Refresh LOD"]
+      [:span {:id "workspace-status"} "Workspace ready"]
       [:select {:id "drawing-kind" :aria-label "Drawing kind"}
        [:option {:value "plan"} "Plan"] [:option {:value "section"} "Section"]
        [:option {:value "elevation"} "Elevation"] [:option {:value "sheet"} "Sheet"]]
