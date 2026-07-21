@@ -125,34 +125,38 @@
 
 (defn cloud-sync-request
   "Build the browser HTTP request without exposing fetch to shared code."
-  [{:keys [base-url org repo cacao]} envelope]
-  (when-not (and (string? base-url) (seq base-url)
-                 (string? org) (seq org) (string? repo) (seq repo)
-                 (string? cacao) (seq cacao))
-    (throw (ex-info "cloud-itonami endpoint and CACAO are required" {})))
-  {:url (str (string/replace base-url #"/+$" "")
-             "/api/" org "/" repo "/design/sync")
-   :method "POST"
-   :headers {"content-type" "application/json"
-             "authorization" (str "CACAO " cacao)}
-   :body {:envelopeEdn (pr-str envelope)}})
+  ([config envelope] (cloud-sync-request config envelope nil))
+  ([{:keys [base-url org repo cacao]} envelope publication]
+   (when-not (and (string? base-url) (seq base-url)
+                  (string? org) (seq org) (string? repo) (seq repo)
+                  (string? cacao) (seq cacao))
+     (throw (ex-info "cloud-itonami endpoint and CACAO are required" {})))
+   {:url (str (string/replace base-url #"/+$" "")
+              "/api/" org "/" repo "/design/sync")
+    :method "POST"
+    :headers {"content-type" "application/json"
+              "authorization" (str "CACAO " cacao)}
+    :body (cond-> {:envelopeEdn (pr-str envelope)}
+            publication (assoc :publicationEdn (pr-str publication)))}))
 
 (defn cloud-opencde-publication
   "Build the exact wire package consumed by cloud-itonami.design-opencde.
   The IFC document is bound to the collaboration envelope's durable head;
   topic revisions and idempotency keys remain stable across retries."
-  [sync-payload {:keys [document-id name content-ref content-hash base-version
+  [sync-payload {:keys [document-id name content content-ref content-hash base-version
                         timestamp topic-revisions topics]}]
   (when-not (= :design/collaboration-synchronized (:itonami/event sync-payload))
     (throw (ex-info "OpenCDE publication requires collaboration sync payload" {})))
   (let [project-id (:design/project-id sync-payload)
         head (:design/head-revision sync-payload)]
-    (when-not (and project-id head document-id name content-ref content-hash
+    (when-not (and project-id head document-id name (string? content) (seq content)
+                   content-ref content-hash
                    (integer? base-version) (<= 0 base-version))
       (throw (ex-info "incomplete cloud OpenCDE publication metadata"
                       {:project-id project-id :head head :document-id document-id})))
     {:document {:project-id project-id :design-revision head
                 :document-id document-id :name name :media-type "application/ifc"
+                :content content
                 :content-ref content-ref :content-hash content-hash
                 :base-version base-version
                 :idempotency-key (str project-id ":" head ":ifc:" content-hash)

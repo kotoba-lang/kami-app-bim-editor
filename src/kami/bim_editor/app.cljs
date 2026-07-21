@@ -1266,12 +1266,36 @@
                          :id (:project-id @state) :name (:project-name @state))
           package (integration/cloud-sync-package
                    (:cloud-workspace @state) (:cloud-checkpoint @state) project actor)
+          timestamp (.now js/Date)
+          ifc-text (ifc/write-spf (integration/coordinated-ifc project))
+          content-hash (cloud/checksum ifc-text)
+          existing (when-let [cloud-state (:cloud-state @state)]
+                     (cloud/get-opencde-document cloud-state (:project-id @state)
+                                                 actor "federated-ifc"))
+          topic-heads (if-let [cloud-state (:cloud-state @state)]
+                        (into {} (map (fn [entry]
+                                       [(get-in entry [:topic/value :bcf.topic/guid])
+                                        (:topic/revision entry)]))
+                              (cloud/list-opencde-topics cloud-state
+                                                         (:project-id @state) actor))
+                        {})
+          publication (integration/cloud-opencde-publication
+                       (:envelope package)
+                       {:document-id "federated-ifc"
+                        :name (str (:project-name @state) ".ifc")
+                        :content ifc-text
+                        :content-ref (str "cloud-itonami://" (:project-id @state) "/"
+                                          (:design/head-revision (:envelope package)))
+                        :content-hash content-hash
+                        :base-version (or (:document/version existing) 0)
+                        :timestamp timestamp :topic-revisions topic-heads
+                        :topics (:review-topics @state)})
           request (integration/cloud-sync-request
                    {:base-url (.-value (.getElementById js/document "cloud-base-url"))
                     :org (.-value (.getElementById js/document "cloud-org"))
                     :repo (.-value (.getElementById js/document "cloud-repo"))
                     :cacao (.-value (.getElementById js/document "cloud-cacao"))}
-                   (:envelope package))]
+                   (:envelope package) publication)]
       (workspace-status! "Synchronizing durable BIM revision…")
       (-> (js/fetch
            (:url request)
@@ -1292,7 +1316,10 @@
                      (swap! state assoc
                             :cloud-workspace (:workspace package)
                             :cloud-checkpoint (:design/checkpoint ack)
-                            :cloud-sync-ack ack :save-status :dirty)
+                            :cloud-sync-ack ack
+                            :cloud-publication
+                            (some-> (aget body "publication-edn") reader/read-string)
+                            :save-status :dirty)
                      (publish-local-opencde!)
                      (workspace-status!
                       (str "Cloud synced " (:design/head-revision ack)
