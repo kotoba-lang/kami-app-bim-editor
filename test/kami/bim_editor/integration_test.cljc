@@ -92,10 +92,12 @@
         topic {:bcf.topic/guid "clash-1" :bcf.topic/title "Clash"}
         package (integration/cloud-opencde-publication
                  sync {:document-id "federated-ifc" :name "House.ifc"
+                       :content "ISO-10303-21;..."
                        :content-ref "blob://ifc/main-42" :content-hash "sha256:42"
                        :base-version 4 :timestamp 100
                        :topic-revisions {"clash-1" 2} :topics [topic]})]
     (is (= "house-1" (get-in package [:document :project-id])))
+    (is (= "ISO-10303-21;..." (get-in package [:document :content])))
     (is (= "main-42" (get-in package [:document :design-revision])))
     (is (= "house-1:main-42:ifc:sha256:42"
            (get-in package [:document :idempotency-key])))
@@ -116,7 +118,13 @@
         request (integration/cloud-sync-request
                  {:base-url "https://itonami.cloud/" :org "acme" :repo "tower"
                   :cacao "signed"}
-                 (:envelope second-package))]
+                 (:envelope second-package))
+        publication {:document {:content "ISO-10303-21;..."} :topics []}
+        publication-request
+        (integration/cloud-sync-request
+         {:base-url "https://itonami.cloud/" :org "acme" :repo "tower"
+          :cacao "signed"}
+         (:envelope second-package) publication)]
     (is (= :design/collaboration-synchronized (:itonami/event first-envelope)))
     (is (= "editor-1" (get-in second-package [:envelope :design/head-revision])))
     (is (= (:workspace second-package) (:workspace replay)))
@@ -124,7 +132,9 @@
     (is (= "https://itonami.cloud/api/acme/tower/design/sync" (:url request)))
     (is (= "CACAO signed" (get-in request [:headers "authorization"])))
     (is (= (:envelope second-package)
-           (-> request :body :envelopeEdn edn/read-string)))))
+           (-> request :body :envelopeEdn edn/read-string)))
+    (is (= publication
+           (-> publication-request :body :publicationEdn edn/read-string)))))
 
 (deftest exports-pdf-and-dxf-through-shared-libraries
   (let [project (model)
