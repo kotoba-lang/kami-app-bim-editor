@@ -31,7 +31,12 @@
                     {:id "symmetric-panel" :name "Symmetric Panel"
                      :category :generic-model :width 2.0 :depth 0.2 :height 1.0
                      :material "Steel"})
-        schema {:formulas {:volume [:* [:param :width] [:param :depth]
+        schema {:parameters (assoc (:family/parameters definition)
+                                   :reported-width
+                                   {:type :length
+                                    :reporting {:kind :distance :from :left :to :right}})
+                :lookup-tables {:sizes [{:width 2.0 :code "P2"}]}
+                :formulas {:volume [:* [:param :width] [:param :depth]
                                       [:param :height]]}
                 :reference-planes {:left {:axis :x :offset -1.0}
                                    :right {:axis :x :offset 1.0}}
@@ -40,6 +45,9 @@
                 :template (:family/template definition)}
         advanced (editor/apply-parametric-schema definition schema)]
     (is (= (:constraints schema) (:family/constraints advanced)))
+    (is (= (:lookup-tables schema) (:family/lookup-tables advanced)))
+    (is (= {:kind :distance :from :left :to :right}
+           (get-in advanced [:family/parameters :reported-width :reporting])))
     (is (= -1.0 (get-in advanced [:family/reference-planes :left :offset])))
     (is (thrown? #?(:clj Exception :cljs js/Error)
                  (editor/apply-parametric-schema

@@ -119,6 +119,10 @@
       (set! (.-value (.getElementById js/document "family-height")) (parameter :height))
       (set! (.-value (.getElementById js/document "family-material")) (parameter :finish))
       (set! (.-checked (.getElementById js/document "family-shared")) (:family/shared? definition))
+      (set! (.-value (.getElementById js/document "family-parameters"))
+            (pr-str (or (:family/parameters definition) {})))
+      (set! (.-value (.getElementById js/document "family-lookup-tables"))
+            (pr-str (or (:family/lookup-tables definition) {})))
       (set! (.-value (.getElementById js/document "family-formulas"))
             (pr-str (or (:family/formulas definition) {})))
       (set! (.-value (.getElementById js/document "family-reference-planes"))
@@ -1540,7 +1544,10 @@
                              definition
                              (family-editor/apply-parametric-schema
                               base-definition
-                              {:formulas (edn-field "family-formulas" {})
+                              {:parameters (edn-field "family-parameters"
+                                                      (:family/parameters base-definition))
+                               :lookup-tables (edn-field "family-lookup-tables" {})
+                               :formulas (edn-field "family-formulas" {})
                                :reference-planes
                                (edn-field "family-reference-planes" {})
                                :constraints (edn-field "family-constraints" [])
