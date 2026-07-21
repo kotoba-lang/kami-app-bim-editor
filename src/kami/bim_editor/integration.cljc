@@ -4,11 +4,25 @@
             [bim.interchange :as interchange]
             [bim.spatial :as spatial]))
 
+(defn reconcile-mep-systems
+  "Replace embedded MEP member snapshots with the current authored elements and
+  remove deleted members before persistence or exchange."
+  [project systems]
+  (let [elements (mapcat :elements
+                         (mapcat :storeys (mapcat :buildings (:sites project))))
+        by-id (into {} (map (juxt :id identity)) elements)
+        current (fn [members] (vec (keep #(get by-id (:id %)) members)))]
+    (mapv #(-> %
+               (update :mep/segments current)
+               (update :mep/fittings current)
+               (update :mep/equipment current))
+          systems)))
+
 (defn coordinated-model
   "Attach editor-owned analytical/system state to the authored building before
   IFC, CDE, drawing, or cloud publication."
   [project structural-model mep-systems]
-  (cond-> (assoc project :mep/systems (vec mep-systems))
+  (cond-> (assoc project :mep/systems (reconcile-mep-systems project mep-systems))
     structural-model (assoc :structural/model structural-model)))
 
 (defn coordinated-revision

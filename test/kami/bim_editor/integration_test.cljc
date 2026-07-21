@@ -30,7 +30,7 @@
 
 (deftest coordinates-analysis-and-mep-into-every-exchange-view
   (let [structure {:structural/nodes [{:structural.node/id :n1}]}
-        system {:mep/id :supply :mep/segments []}
+        system {:mep/id :supply :mep/segments [] :mep/fittings [] :mep/equipment []}
         coordinated (integration/coordinated-model (model) structure [system])
         bundle (integration/coordinated-revision
                 {:project (model) :project-id "house-1" :project-name "House"
@@ -40,6 +40,18 @@
     (is (= [system] (:mep/systems coordinated)))
     (is (= structure (get-in bundle [:project/model :structural/model])))
     (is (= [system] (get-in bundle [:project/model :mep/systems])))))
+
+(deftest reconciles-mep-member-snapshots-with-authored-model
+  (let [segment (assoc (bim/wall {:id 10 :name "Current" :start [0 0 0] :end [5 0 0]})
+                       :kind :mep-segment)
+        project (bim/update-element (model) 3 10 (constantly segment))
+        stale (assoc segment :name "Stale")
+        missing {:id 999 :kind :mep-fitting}
+        system {:mep/id :supply :mep/segments [stale] :mep/fittings [missing]
+                :mep/equipment []}
+        reconciled (first (integration/reconcile-mep-systems project [system]))]
+    (is (= "Current" (get-in reconciled [:mep/segments 0 :name])))
+    (is (empty? (:mep/fittings reconciled)))))
 
 (deftest plans-metadata-first-large-model-view
   (let [elements [{:id 1 :spatial/bounds {:min [0 0 0] :max [1 1 1]}}
