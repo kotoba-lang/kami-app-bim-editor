@@ -78,7 +78,8 @@
                  :mep-systems [{:mep/id :supply}]
                  :drawing-set {:drawing/views [{:view/id :plan}]}
                  :review-topics [{:bcf.topic/guid "topic"}]
-                 :cloud-state {:opencde/projects {}}})]
+                 :cloud-state {:opencde/projects {}}
+                 :electrical-distribution {:electrical.distribution/total-load-va 1000.0}})]
     (is (every? true? (vals status)))))
 
 (deftest imports-shared-ifc-spf
@@ -99,11 +100,26 @@
     (is (= "house-1" (get-in package [:document :project-id])))
     (is (= "ISO-10303-21;..." (get-in package [:document :content])))
     (is (= "main-42" (get-in package [:document :design-revision])))
-    (is (= "house-1:main-42:ifc:sha256:42"
+    (is (= "house-1:main-42:federated-ifc:sha256:42"
            (get-in package [:document :idempotency-key])))
+    (is (= "application/ifc" (get-in package [:document :media-type])))
     (is (= 2 (get-in package [:topics 0 :expected-revision])))
     (is (= "house-1:main-42:bcf:clash-1:2"
            (get-in package [:topics 0 :idempotency-key])))))
+
+(deftest publishes-non-ifc-analysis-result-documents-with-their-own-media-type
+  (let [sync {:itonami/event :design/collaboration-synchronized
+              :design/project-id "house-1" :design/head-revision "main-42"}
+        package (integration/cloud-opencde-publication
+                 sync {:document-id "electrical-distribution"
+                       :name "House-electrical-distribution.edn"
+                       :content "{:electrical.distribution/total-load-va 1000.0}"
+                       :content-ref "blob://electrical/main-42" :content-hash "sha256:99"
+                       :base-version 0 :timestamp 100
+                       :media-type "application/edn"})]
+    (is (= "application/edn" (get-in package [:document :media-type])))
+    (is (= "house-1:main-42:electrical-distribution:sha256:99"
+           (get-in package [:document :idempotency-key])))))
 
 (deftest advances-and-serializes-replay-safe-cloud-sync
   (let [initial (assoc (model) :id "house-1" :name "House")
