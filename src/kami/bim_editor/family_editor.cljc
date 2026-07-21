@@ -38,15 +38,21 @@
   (assoc-in catalog [:family-catalog/families (:family/id definition)] definition))
 
 (defn apply-parametric-schema
-  "Apply advanced family formulas, datums, constraints, sketches, and template.
+  "Apply advanced family parameters, lookup tables, formulas, datums,
+  constraints, sketches, and template.
   A trial instance is resolved before the definition may enter the catalog."
-  [definition {:keys [formulas reference-planes constraints sketches template]}]
-  (when-not (and (map? formulas) (map? reference-planes) (vector? constraints)
+  [definition {:keys [parameters lookup-tables formulas reference-planes constraints
+                      sketches template]}]
+  (when-not (and (map? parameters) (map? lookup-tables) (map? formulas)
+                 (map? reference-planes) (vector? constraints)
                  (map? sketches) (map? template))
     (throw (ex-info "advanced family schema has invalid collection types"
-                    {:formulas formulas :reference-planes reference-planes
+                    {:parameters parameters :lookup-tables lookup-tables
+                     :formulas formulas :reference-planes reference-planes
                      :constraints constraints :sketches sketches :template template})))
   (let [definition (assoc definition
+                          :family/parameters parameters
+                          :family/lookup-tables lookup-tables
                           :family/formulas formulas
                           :family/reference-planes reference-planes
                           :family/constraints constraints

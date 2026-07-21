@@ -66,6 +66,10 @@
        [:label "Height (m)" [:input {:id "family-height" :type "number" :value 0.9}]]
        [:label "Material" [:input {:id "family-material" :value "Oak"}]]
        [:label "Shared family" [:input {:id "family-shared" :type "checkbox"}]]
+       [:label "Parameters (EDN)"
+        [:textarea {:id "family-parameters" :rows 6} "{}"]]
+       [:label "Lookup tables (EDN)"
+        [:textarea {:id "family-lookup-tables" :rows 5} "{}"]]
        [:label "Formulas (EDN)"
         [:textarea {:id "family-formulas" :rows 3} "{}"]]
        [:label "Reference planes (EDN)"
