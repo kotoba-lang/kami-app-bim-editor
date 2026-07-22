@@ -45,7 +45,8 @@
                       :selected-space nil :next-space-id 1000
                       :selected-clash nil :family-catalog (initial-family-catalog)
                       :structural-model nil :structural-overlay nil
-                      :mep-systems [] :review-topics [] :cloud-state nil
+                      :mep-systems [] :electrical-distribution nil
+                      :review-topics [] :cloud-state nil
                       :cloud-workspace nil :cloud-checkpoint nil :cloud-sync-ack nil
                       :stream-settings {:cell-size 10.0 :batch-size 512
                                         :max-resident 10000 :max-loads 1000}
@@ -312,7 +313,8 @@
            (-> s (update :history conj (:project s))
                (assoc :project p :future [] :save-status :dirty
                       :drawing-views (reassociate-drawing-views (:drawing-views s) p)
-                      :structural-model nil :structural-overlay nil :stream-view nil)
+                      :structural-model nil :structural-overlay nil
+                      :electrical-distribution nil :stream-view nil)
                (update :revision inc))))
   (refresh!))
 (defn- retain-mep-system! [system]
@@ -1015,6 +1017,25 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "engineering-status"))
             (str "Electrical error: " (.-message error))))))
+(defn- analyze-electrical-distribution! []
+  (try
+    (let [topology (reader/read-string
+                    (.-value (.getElementById js/document "electrical-distribution-topology")))
+          result (mep/analyze-electrical-distribution topology)
+          coordinations (vals (:electrical.distribution/coordinations result))
+          coordinated (count (filter :electrical.coordination/coordinated? coordinations))
+          issue-count (count (:electrical.distribution/issues result))]
+      (swap! state assoc :electrical-distribution result)
+      (set! (.-textContent (.getElementById js/document "electrical-distribution-status"))
+            (str (count (:electrical.distribution/panels result)) " panels · "
+                 (count (:electrical.distribution/feeders result)) " feeders · "
+                 (.toFixed (:electrical.distribution/total-load-va result) 0) " VA total · "
+                 coordinated "/" (count coordinations) " coordinated · "
+                 issue-count " issues")))
+    (catch :default error
+      (swap! state assoc :electrical-distribution nil)
+      (set! (.-textContent (.getElementById js/document "electrical-distribution-status"))
+            (str "Distribution error: " (.-message error))))))
 (defn- add-mep-equipment! []
   (try
     (let [id (:next-id @state)
@@ -1132,6 +1153,7 @@
            :structural-model (:project/structural-model p)
            :structural-overlay nil
            :mep-systems (:project/mep-systems p)
+           :electrical-distribution nil
            :review-topics (:project/review-topics p)
            :cloud-state (:project/cloud-state p)
            :cloud-workspace (:project/cloud-workspace p)
@@ -1204,7 +1226,8 @@
                 {:project (:project @state) :family-catalog (:family-catalog @state)
                  :structural-model (:structural-model @state)
                  :mep-systems (:mep-systems @state) :drawing-set (:drawing-set @state)
-                 :review-topics (:review-topics @state) :cloud-state (:cloud-state @state)})
+                 :review-topics (:review-topics @state) :cloud-state (:cloud-state @state)
+                 :electrical-distribution (:electrical-distribution @state)})
         ready (count (filter true? (vals status)))]
     (workspace-status! (str ready "/" (count status) " workspace capabilities ready"))))
 (defn- refresh-stream! []
@@ -1256,13 +1279,87 @@
                   (:opencde/state document) project-id actor (:review-topics @state)
                   {:expected-revisions topic-heads
                    :idempotency-prefix (str project-id ":bcf:" timestamp)
-                   :timestamp timestamp})]
-      (swap! state assoc :cloud-state (:opencde/state topics) :save-status :dirty)
+                   :timestamp timestamp})
+          electrical (:electrical-distribution @state)
+          electrical-content (when electrical (pr-str electrical))
+          electrical-existing (when electrical
+                                (cloud/get-opencde-document
+                                 (:opencde/state topics) project-id actor
+                                 "electrical-distribution"))
+          electrical-base-version (or (:document/version electrical-existing) 0)
+          electrical-document
+          (when electrical
+            (cloud/publish-model-version
+             (:opencde/state topics) project-id actor
+             {:document-id "electrical-distribution"
+              :name (str (:project-name @state) "-electrical-distribution.edn")
+              :media-type "application/edn"
+              :content-ref (str "local://" project-id "/electrical-distribution/"
+                                (inc electrical-base-version))
+              :content-hash (cloud/checksum electrical-content)
+              :base-version electrical-base-version
+              :idempotency-key (str project-id ":electrical-distribution:"
+                                    electrical-base-version ":"
+                                    (cloud/checksum electrical-content))
+              :metadata {:design/revision (:revision @state)} :timestamp timestamp}))]
+      (swap! state assoc :cloud-state (:opencde/state (or electrical-document topics))
+             :save-status :dirty)
       (workspace-status!
        (str "OpenCDE IFC v" (get-in document [:opencde/document :document/version])
-            " · " (count (:opencde/results topics)) " BCF topics")))
+            " · " (count (:opencde/results topics)) " BCF topics"
+            (when electrical-document
+              (str " · electrical distribution v"
+                   (get-in electrical-document [:opencde/document :document/version]))))))
     (catch :default error
       (workspace-status! (str "OpenCDE error: " (.-message error))))))
+(defn- sync-electrical-distribution-remote!
+  "Publish the electrical distribution analysis, if present, as its own
+  OpenCDE document bound to the same durable collaboration head as the IFC
+  document just synced. Resolves to a status suffix string; never rejects,
+  so a failure here does not undo the IFC sync that already succeeded."
+  [envelope]
+  (if-let [electrical (:electrical-distribution @state)]
+    (try
+      (let [actor "bim-editor"
+            content (pr-str electrical)
+            content-hash (cloud/checksum content)
+            existing (when-let [cloud-state (:cloud-state @state)]
+                       (cloud/get-opencde-document cloud-state (:project-id @state)
+                                                   actor "electrical-distribution"))
+            publication (integration/cloud-opencde-publication
+                         envelope
+                         {:document-id "electrical-distribution"
+                          :name (str (:project-name @state) "-electrical-distribution.edn")
+                          :content content :media-type "application/edn"
+                          :content-ref (str "cloud-itonami://" (:project-id @state) "/"
+                                            (:design/head-revision envelope)
+                                            "/electrical-distribution")
+                          :content-hash content-hash
+                          :base-version (or (:document/version existing) 0)
+                          :timestamp (.now js/Date) :topic-revisions {} :topics []})
+            request (integration/cloud-sync-request
+                     {:base-url (.-value (.getElementById js/document "cloud-base-url"))
+                      :org (.-value (.getElementById js/document "cloud-org"))
+                      :repo (.-value (.getElementById js/document "cloud-repo"))
+                      :cacao (.-value (.getElementById js/document "cloud-cacao"))}
+                     envelope publication)]
+        (-> (js/fetch
+             (:url request)
+             #js {:method (:method request)
+                  :headers (clj->js (:headers request))
+                  :body (js/JSON.stringify (clj->js (:body request)))})
+            (.then (fn [response]
+                     (-> (.json response)
+                         (.then (fn [body]
+                                  (if (.-ok response)
+                                    " · electrical distribution synced"
+                                    (str " · electrical sync error: "
+                                         (or (aget body "reason") (aget body "error")
+                                             (str "HTTP " (.-status response))))))))))
+            (.catch (fn [error] (str " · electrical sync error: " (.-message error))))))
+      (catch :default error
+        (js/Promise.resolve (str " · electrical sync error: " (.-message error)))))
+    (js/Promise.resolve "")))
 (defn- publish-opencde! []
   (try
     (let [actor "bim-editor"
@@ -1324,10 +1421,13 @@
                             :cloud-publication
                             (some-> (aget body "publication-edn") reader/read-string)
                             :save-status :dirty)
-                     (publish-local-opencde!)
-                     (workspace-status!
-                      (str "Cloud synced " (:design/head-revision ack)
-                           " · IFC + " (count (:review-topics @state)) " BCF topics")))))
+                     (-> (sync-electrical-distribution-remote! (:envelope package))
+                         (.then (fn [electrical-suffix]
+                                  (publish-local-opencde!)
+                                  (workspace-status!
+                                   (str "Cloud synced " (:design/head-revision ack)
+                                        " · IFC + " (count (:review-topics @state))
+                                        " BCF topics" electrical-suffix))))))))
           (.catch (fn [error]
                     (workspace-status! (str "Cloud sync error: " (.-message error)))))))
     (catch :default error
@@ -1506,6 +1606,8 @@
  (.addEventListener (.getElementById js/document "route-duct") "click" route-duct!)
  (.addEventListener (.getElementById js/document "design-electrical-panel") "click"
                     design-electrical-panel!)
+ (.addEventListener (.getElementById js/document "analyze-electrical-distribution") "click"
+                    analyze-electrical-distribution!)
  (.addEventListener (.getElementById js/document "add-mep-equipment") "click"
                     add-mep-equipment!)
  (.addEventListener (.getElementById js/document "connect-mep-elements") "click"

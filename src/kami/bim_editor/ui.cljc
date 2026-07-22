@@ -153,6 +153,12 @@
        [:label "Main rating (A)"
         [:input {:id "panel-main-rating" :type "number" :min 1 :value 63}]]
        [:button {:id "design-electrical-panel"} "Design panel + circuits"]
+       [:h3 "Radial electrical distribution"]
+       [:label "Topology (EDN: :root-panel/:panels/:feeders/:protective-device-catalog)"
+        [:textarea {:id "electrical-distribution-topology" :rows 10}
+         "{:root-panel :main\n :panels [{:id :main :phases [:l1 :l2 :l3] :line-voltage-v 400.0 :main-rating-a 100.0 :circuits []}]\n :feeders []\n :protective-device-catalog [{:id :mccb-63 :rating-a 63.0 :breaking-capacity-a 10000.0 :instantaneous-trip-multiple 10.0}]}"]]
+       [:button.primary {:id "analyze-electrical-distribution"} "Analyze radial distribution"]
+       [:div {:id "electrical-distribution-status"} "No distribution analysis"]
        [:label "Equipment kind" [:select {:id "mep-equipment-kind"}
                                  [:option {:value "pump"} "Pump"]
                                  [:option {:value "air-terminal"} "Air terminal"]

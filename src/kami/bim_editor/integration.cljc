@@ -66,11 +66,12 @@
   "Summarize whether each integrated workspace discipline has publishable
   state, so UI and automation share the same readiness rules."
   [{:keys [project family-catalog structural-model mep-systems drawing-set
-           review-topics cloud-state]}]
+           review-topics cloud-state electrical-distribution]}]
   {:architecture (boolean project)
    :families (boolean (seq (:family-catalog/families family-catalog)))
    :structure (boolean structural-model)
    :mep (boolean (seq mep-systems))
+   :electrical (boolean electrical-distribution)
    :drawings (boolean (seq (:drawing/views drawing-set)))
    :coordination (boolean (seq review-topics))
    :opencde (boolean cloud-state)
@@ -140,11 +141,14 @@
             publication (assoc :publicationEdn (pr-str publication)))}))
 
 (defn cloud-opencde-publication
-  "Build the exact wire package consumed by cloud-itonami.design-opencde.
-  The IFC document is bound to the collaboration envelope's durable head;
-  topic revisions and idempotency keys remain stable across retries."
+  "Build the exact wire package consumed by cloud-itonami.design-opencde for
+  any document kind (IFC, or an analysis-result document such as structural,
+  MEP, or electrical distribution). The document is bound to the
+  collaboration envelope's durable head; topic revisions and idempotency
+  keys remain stable across retries."
   [sync-payload {:keys [document-id name content content-ref content-hash base-version
-                        timestamp topic-revisions topics]}]
+                        timestamp topic-revisions topics media-type]
+                 :or {media-type "application/ifc"}}]
   (when-not (= :design/collaboration-synchronized (:itonami/event sync-payload))
     (throw (ex-info "OpenCDE publication requires collaboration sync payload" {})))
   (let [project-id (:design/project-id sync-payload)
@@ -155,11 +159,11 @@
       (throw (ex-info "incomplete cloud OpenCDE publication metadata"
                       {:project-id project-id :head head :document-id document-id})))
     {:document {:project-id project-id :design-revision head
-                :document-id document-id :name name :media-type "application/ifc"
+                :document-id document-id :name name :media-type media-type
                 :content content
                 :content-ref content-ref :content-hash content-hash
                 :base-version base-version
-                :idempotency-key (str project-id ":" head ":ifc:" content-hash)
+                :idempotency-key (str project-id ":" head ":" document-id ":" content-hash)
                 :metadata {:design/revision head} :timestamp timestamp}
      :topics
      (mapv (fn [topic]
