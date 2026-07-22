@@ -738,6 +738,30 @@
       (swap! state assoc :structural-overlay nil)
       (set! (.-textContent (.getElementById js/document "structural-model-status"))
             (str "Analysis error: " (.-message error))))))
+(defn- run-3d-frame-analysis! []
+  (try
+    (let [model (:structural-model @state)
+          _ (when-not model (throw (js/Error. "Generate analytical model and loads first")))
+          analysis (family/analyze-3d-frame-combination model :design-uls)
+          overlay (family/structural-result-overlay
+                   model analysis {:deformation-scale (num "structural-deformation-scale")})
+          reactions (vals (:structural.analysis/reactions analysis))
+          max-vertical-reaction-n
+          (when (seq reactions) (reduce max (map #(js/Math.abs (nth % 2)) reactions)))
+          max-moment-nm
+          (when (seq (:structural.analysis/member-results analysis))
+            (reduce max (map :max-moment-nm (vals (:structural.analysis/member-results analysis)))))]
+      (swap! state assoc :structural-overlay overlay)
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str (count (:structural.overlay/members overlay))
+                 " six-DOF frame results · max vertical reaction "
+                 (if max-vertical-reaction-n (.toFixed max-vertical-reaction-n 1) "n/a")
+                 " N · max moment " (if max-moment-nm (.toFixed max-moment-nm 1) "n/a") " N·m"))
+      (refresh!))
+    (catch :default error
+      (swap! state assoc :structural-overlay nil)
+      (set! (.-textContent (.getElementById js/document "structural-model-status"))
+            (str "3D frame analysis error: " (.-message error))))))
 (defn- route-pipe! []
   (try
     (let [start (parse-point "pipe-start") end (parse-point "pipe-end")
@@ -1600,6 +1624,8 @@
                     generate-structural-loads!)
  (.addEventListener (.getElementById js/document "run-structural-analysis") "click"
                     run-structural-analysis!)
+ (.addEventListener (.getElementById js/document "run-3d-frame-analysis") "click"
+                    run-3d-frame-analysis!)
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "design-mep-network") "click"
                     design-mep-network!)

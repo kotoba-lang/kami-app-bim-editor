@@ -105,6 +105,7 @@
        [:button {:id "generate-structural-loads"} "Generate design loads"]
        [:label "Deformation scale" [:input {:id "structural-deformation-scale" :type "number" :min 0 :value 100}]]
        [:button {:id "run-structural-analysis"} "Run ULS + show results"]
+       [:button {:id "run-3d-frame-analysis"} "Run six-DOF 3D frame analysis"]
        [:label "Structural span (m)" [:input {:id "structural-span" :type "number" :value 6}]]
        [:label "Axial load (kN)" [:input {:id "structural-load" :type "number" :value 100}]]
        [:button {:id "analyze-structure"} "Analyze member"]
