@@ -127,6 +127,18 @@
        [:label "Maximum velocity (m/s)"
         [:input {:id "mep-network-max-velocity" :type "number" :min 0.1 :value 2}]]
        [:button {:id "design-mep-network"} "Design + route branched network"]
+       [:h3 "Closed-loop pipe network"]
+       [:label "Source" [:input {:id "closed-loop-source" :value "0,2,2.5"}]]
+       [:label "Left" [:input {:id "closed-loop-left" :value "4,0,2.5"}]]
+       [:label "Right" [:input {:id "closed-loop-right" :value "4,4,2.5"}]]
+       [:label "Terminal" [:input {:id "closed-loop-terminal" :value "8,2,2.5"}]]
+       [:label "Pipe diameter (m)"
+        [:input {:id "closed-loop-diameter" :type "number" :min 0.01 :value 0.1}]]
+       [:label "Source pressure (kPa)"
+        [:input {:id "closed-loop-source-pressure" :type "number" :min 0 :value 300}]]
+       [:label "Terminal demand (L/s)"
+        [:input {:id "closed-loop-demand" :type "number" :min 0.001 :value 4}]]
+       [:button {:id "design-closed-loop-mep-network"} "Solve closed-loop network"]
        [:h3 "Supply-air duct"]
        [:label "Duct start" [:input {:id "duct-start" :value "0,1,2.8"}]]
        [:label "Duct end" [:input {:id "duct-end" :value "8,5,2.8"}]]
