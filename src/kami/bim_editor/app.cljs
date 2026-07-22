@@ -875,6 +875,54 @@
     (catch :default error
       (set! (.-textContent (.getElementById js/document "engineering-status"))
             (str "Network error: " (.-message error))))))
+(defn- design-closed-loop-mep-network! []
+  (try
+    (let [source (parse-point "closed-loop-source")
+          left (parse-point "closed-loop-left")
+          right (parse-point "closed-loop-right")
+          terminal (parse-point "closed-loop-terminal")
+          diameter (num "closed-loop-diameter")
+          source-pressure (* 1000.0 (num "closed-loop-source-pressure"))
+          demand (/ (num "closed-loop-demand") 1000.0)
+          network-id (str "closed-loop-" (:next-id @state))
+          edge-id #(str network-id "-" %)
+          assembly (mep/network-assembly
+                    {:id network-id :system-id :chilled-water :domain :piping
+                     :default-size diameter
+                     :nodes {:source {:point source} :left {:point left}
+                             :right {:point right} :terminal {:point terminal}}
+                     :edges [{:id (edge-id "sl") :from :source :to :left}
+                             {:id (edge-id "lt") :from :left :to :terminal}
+                             {:id (edge-id "sr") :from :source :to :right}
+                             {:id (edge-id "rt") :from :right :to :terminal}]})
+          segments (:mep.assembly/segments assembly)
+          fittings (:mep.assembly/fittings assembly)
+          system (family/mep-system
+                  {:id network-id :name network-id :kind :hydronic :medium :chilled-water
+                   :design-flow demand :segments segments :fittings fittings})
+          design (family/analyze-closed-authored-mep-system
+                  system {:source source-pressure} {:terminal demand}
+                  {:density-kg-m3 998.0 :friction-factor 0.02} {})
+          designed-system (:mep.design/system design)
+          analysis (:mep.design/analysis design)
+          designed-segments (:mep/segments designed-system)
+          issues (family/validate-mep-system designed-system)
+          _ (when (seq issues)
+              (throw (js/Error. (str "Invalid closed-loop network: " (pr-str issues)))))
+          project (reduce #(bim/add-element %1 (:active-storey @state) %2)
+                          (:project @state) (concat designed-segments fittings))]
+      (swap! state update :next-id inc)
+      (select-only! (:id (first designed-segments)))
+      (commit! project)
+      (retain-mep-system! designed-system)
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Closed loop · " (count designed-segments) " segments · "
+                 (:fluid.network/iterations analysis) " iterations · "
+                 "residual " (.toExponential (:fluid.network/maximum-residual-m3-s analysis) 2)
+                 " m³/s")))
+    (catch :default error
+      (set! (.-textContent (.getElementById js/document "engineering-status"))
+            (str "Closed-loop network error: " (.-message error))))))
 (defn- route-duct! []
   (try
     (let [start (parse-point "duct-start") end (parse-point "duct-end")
@@ -1629,6 +1677,8 @@
  (.addEventListener (.getElementById js/document "route-pipe") "click" route-pipe!)
  (.addEventListener (.getElementById js/document "design-mep-network") "click"
                     design-mep-network!)
+ (.addEventListener (.getElementById js/document "design-closed-loop-mep-network") "click"
+                    design-closed-loop-mep-network!)
  (.addEventListener (.getElementById js/document "route-duct") "click" route-duct!)
  (.addEventListener (.getElementById js/document "design-electrical-panel") "click"
                     design-electrical-panel!)
