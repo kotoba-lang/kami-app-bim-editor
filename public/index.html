@@ -27,7 +27,7 @@ button { cursor: pointer; text-align: left; }</style></head>
       <option value="revit">Revit</option>
       <option value="archicad">Archicad</option>
       <option value="vectorworks">Vectorworks</option>
-    </select><button id="undo">Undo</button><button id="redo">Redo</button><button id="save-project">Save</button><button id="load-project">Load</button><button id="import">Import</button><input id="import-file" type="file" accept=".edn,.kami-bim.edn" style="display:none;"><button id="export">Export Project</button><button id="export-ifc">Export IFC</button><button id="import-ifc">Import IFC</button><input id="import-ifc-file" type="file" accept=".ifc" style="display:none;"><select id="drawing-kind" aria-label="Drawing kind">
+    </select><button id="undo">Undo</button><button id="redo">Redo</button><button id="save-project">Save</button><button id="load-project">Load</button><button id="import">Import</button><input id="import-file" type="file" accept=".edn,.kami-bim.edn" style="display:none;"><button id="export">Export Project</button><button id="export-ifc">Export IFC</button><button id="import-ifc">Import IFC</button><input id="import-ifc-file" type="file" accept=".ifc" style="display:none;"><button id="publish-opencde">Publish OpenCDE</button><button id="export-bcf">Export BCF</button><button id="refresh-stream">Refresh LOD</button><span id="workspace-status">Workspace ready</span><select id="drawing-kind" aria-label="Drawing kind">
       <option value="plan">Plan</option>
       <option value="section">Section</option>
       <option value="elevation">Elevation</option>
@@ -77,6 +77,8 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Height (m)<input id="family-height" type="number" value="0.9"></label>
         <label>Material<input id="family-material" value="Oak"></label>
         <label>Shared family<input id="family-shared" type="checkbox"></label>
+        <label>Parameters (EDN)<textarea id="family-parameters" rows="6">{}</textarea></label>
+        <label>Lookup tables (EDN)<textarea id="family-lookup-tables" rows="5">{}</textarea></label>
         <label>Formulas (EDN)<textarea id="family-formulas" rows="3">{}</textarea></label>
         <label>Reference planes (EDN)<textarea id="family-reference-planes" rows="3">{}</textarea></label>
         <label>Constraints (EDN)<textarea id="family-constraints" rows="3">[]</textarea></label>
@@ -109,6 +111,7 @@ button { cursor: pointer; text-align: left; }</style></head>
         <button id="generate-structural-loads">Generate design loads</button>
         <label>Deformation scale<input id="structural-deformation-scale" type="number" min="0" value="100"></label>
         <button id="run-structural-analysis">Run ULS + show results</button>
+        <button id="run-3d-frame-analysis">Run six-DOF 3D frame analysis</button>
         <label>Structural span (m)<input id="structural-span" type="number" value="6"></label>
         <label>Axial load (kN)<input id="structural-load" type="number" value="100"></label>
         <button id="analyze-structure">Analyze member</button>
@@ -128,6 +131,15 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Terminal B demand (L/s)<input id="mep-network-demand-b" type="number" min="0.001" value="2"></label>
         <label>Maximum velocity (m/s)<input id="mep-network-max-velocity" type="number" min="0.1" value="2"></label>
         <button id="design-mep-network">Design + route branched network</button>
+        <h3>Closed-loop pipe network</h3>
+        <label>Source<input id="closed-loop-source" value="0,2,2.5"></label>
+        <label>Left<input id="closed-loop-left" value="4,0,2.5"></label>
+        <label>Right<input id="closed-loop-right" value="4,4,2.5"></label>
+        <label>Terminal<input id="closed-loop-terminal" value="8,2,2.5"></label>
+        <label>Pipe diameter (m)<input id="closed-loop-diameter" type="number" min="0.01" value="0.1"></label>
+        <label>Source pressure (kPa)<input id="closed-loop-source-pressure" type="number" min="0" value="300"></label>
+        <label>Terminal demand (L/s)<input id="closed-loop-demand" type="number" min="0.001" value="4"></label>
+        <button id="design-closed-loop-mep-network">Solve closed-loop network</button>
         <h3>Supply-air duct</h3>
         <label>Duct start<input id="duct-start" value="0,1,2.8"></label>
         <label>Duct end<input id="duct-end" value="8,5,2.8"></label>
@@ -145,6 +157,13 @@ button { cursor: pointer; text-align: left; }</style></head>
         <label>Demand factor (%)<input id="panel-demand-factor" type="number" min="1" max="100" value="80"></label>
         <label>Main rating (A)<input id="panel-main-rating" type="number" min="1" value="63"></label>
         <button id="design-electrical-panel">Design panel + circuits</button>
+        <h3>Radial electrical distribution</h3>
+        <label>Topology (EDN: :root-panel/:panels/:feeders/:protective-device-catalog)<textarea id="electrical-distribution-topology" rows="10">{:root-panel :main
+ :panels [{:id :main :phases [:l1 :l2 :l3] :line-voltage-v 400.0 :main-rating-a 100.0 :circuits []}]
+ :feeders []
+ :protective-device-catalog [{:id :mccb-63 :rating-a 63.0 :breaking-capacity-a 10000.0 :instantaneous-trip-multiple 10.0}]}</textarea></label>
+        <button class="primary" id="analyze-electrical-distribution">Analyze radial distribution</button>
+        <div id="electrical-distribution-status">No distribution analysis</div>
         <label>Equipment kind<select id="mep-equipment-kind">
           <option value="pump">Pump</option>
           <option value="air-terminal">Air terminal</option>
@@ -308,6 +327,11 @@ button { cursor: pointer; text-align: left; }</style></head>
         <button id="apply-slab-layers">Apply slab layers (SL)</button>
         <label>Slab vertex elevations (m)<input id="slab-elevations" type="text" value="0,0,0,0"></label>
         <button id="apply-slab-shape">Apply slab shape (SE)</button>
+        <h2>Cloud collaboration</h2>
+        <label>cloud-itonami URL<input id="cloud-base-url" type="url" value="https://itonami.cloud"></label>
+        <label>Organization<input id="cloud-org" value="gftdcojp"></label>
+        <label>Repository<input id="cloud-repo" value="cloud-itonami"></label>
+        <label>CACAO capability token<input id="cloud-cacao" type="password" autocomplete="off"></label>
         <label>Shaft X (m)<input id="shaft-x" type="number" step="0.1" value="3"></label>
         <label>Shaft Y (m)<input id="shaft-y" type="number" step="0.1" value="2"></label>
         <label>Shaft width (m)<input id="shaft-width" type="number" min="0.1" step="0.1" value="1"></label>
