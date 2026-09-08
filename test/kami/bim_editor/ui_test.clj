@@ -1,5 +1,5 @@
 (ns kami.bim-editor.ui-test
-  (:require [clojure.string :as string]
+  (:require [kotoba.lang.text :as string]
             [clojure.test :refer [deftest is]]
             [kami.bim-editor.ui :as ui]))
 

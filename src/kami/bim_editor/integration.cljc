@@ -1,6 +1,6 @@
 (ns kami.bim-editor.integration
   "Application boundary for publishing one coordinated design revision."
-  (:require [clojure.string :as string]
+  (:require [kotoba.lang.text :as string]
             [bim.integration :as bim-integration]
             [bim.interchange :as interchange]
             [bim.spatial :as spatial]))
