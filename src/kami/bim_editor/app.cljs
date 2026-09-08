@@ -1,4 +1,4 @@
-(ns kami.bim-editor.app (:require [cljs.reader :as reader] [clojure.string :as string] [bim]
+(ns kami.bim-editor.app (:require [cljs.reader :as reader] [kotoba.lang.text :as string] [bim]
                                   [bim.mep :as mep]
                                   [bim.cloud :as cloud]
                                   [bim.editor :as editor]
