@@ -1,9 +1,9 @@
 (ns kami.bim-editor.family-editor
-  (:require [clojure.string :as string]
+  (:require [kotoba.lang.text :as string]
             [bim.integration :as family]))
 
 (defn family-key [value]
-  (-> (or value "") string/trim string/lower-case
+  (-> (or value "") string/trim string/lower
       (string/replace #"[^a-z0-9]+" "-")
       (string/replace #"(^-|-$)" "")))
 
