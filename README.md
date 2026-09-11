@@ -67,13 +67,13 @@ browser file is glue and is deliberately kept out of the domain.
 
 ```bash
 # tests (JVM, cognitect test-runner over the .cljc modules and the generated page)
-clojure -M:test
+kbb -M:test
 
 # regenerate public/index.html from ui/page — do this after any change to ui.cljc
-clojure -M build.cljk
+kbb -M build.cljk
 
 # browser bundle → public/js/app.js
-npm install && npm run build      # shadow-cljs release app
+npm install && npm run build      # amu compile --target wasm32-browser app
 ```
 
 `public/` is the deployable static site; open `public/index.html` over any static server.
