@@ -7,7 +7,7 @@ BCF/OpenCDE issue handling and the cloud collaboration history all live in `bim`
 libraries it composes; this app calls them and never re-implements them.
 
 - Page markup and stylesheet are generated from `kotoba-lang/html` + `kotoba-lang/css`
-  (`src/kami/bim_editor/ui.cljc` → `public/index.html`).
+  (`src/kami/bim_editor/ui.cljk` → `public/index.html`).
 - The 3D viewport is drawn through `kami.webgpu.mesh` (`kotoba-lang/webgpu`), per the
   workspace rule that all 3D goes through the kami-engine render stack.
 - Nearest neighbours: `kami-app-cad` is a general CAD editor (no building semantics);
@@ -17,7 +17,7 @@ libraries it composes; this app calls them and never re-implements them.
 ## What the workspace does
 
 The single page (`public/index.html`) has a header, a left authoring rail, the WebGPU
-viewport, and a right inspector. Every control is bound by `src/kami/bim_editor/app.cljs`.
+viewport, and a right inspector. Every control is bound by `src/kami/bim_editor/app.cljk`.
 
 | Panel | Authoring operations |
 |---|---|
@@ -53,12 +53,12 @@ chords (`WA` wall, `DR` door, `WN` window, `LL` level, `FL` floor, …), `archic
 
 | File | Role | Runs on |
 |---|---|---|
-| `src/kami/bim_editor/project.cljc` | project document, version migration, validation | clj + cljs |
-| `src/kami/bim_editor/family_editor.cljc` | family/type creation and advanced schema validation over `bim.integration` | clj + cljs |
-| `src/kami/bim_editor/interaction.cljc` | pure camera rays, AABB/plane picking, drag deltas, click/box selection, framing | clj + cljs |
-| `src/kami/bim_editor/integration.cljc` | application boundary: coordinated revision, large-model streaming plan, capability readiness, IFC/drawing export, cloud workspace advance and sync request/publication packages | clj + cljs |
-| `src/kami/bim_editor/ui.cljc` | the page as hiccup + a `css.core` sheet | clj (build) |
-| `src/kami/bim_editor/app.cljs` | browser entry `init!`, the `state` atom, all DOM wiring and WebGPU drawing | cljs only |
+| `src/kami/bim_editor/project.cljk` | project document, version migration, validation | clj + cljs |
+| `src/kami/bim_editor/family_editor.cljk` | family/type creation and advanced schema validation over `bim.integration` | clj + cljs |
+| `src/kami/bim_editor/interaction.cljk` | pure camera rays, AABB/plane picking, drag deltas, click/box selection, framing | clj + cljs |
+| `src/kami/bim_editor/integration.cljk` | application boundary: coordinated revision, large-model streaming plan, capability readiness, IFC/drawing export, cloud workspace advance and sync request/publication packages | clj + cljs |
+| `src/kami/bim_editor/ui.cljk` | the page as hiccup + a `css.core` sheet | clj (build) |
+| `src/kami/bim_editor/app.cljk` | browser entry `init!`, the `state` atom, all DOM wiring and WebGPU drawing | cljs only |
 
 Everything except `app.cljs` is portable `.cljc` and is what the tests exercise; the
 browser file is glue and is deliberately kept out of the domain.
@@ -70,7 +70,7 @@ browser file is glue and is deliberately kept out of the domain.
 clojure -M:test
 
 # regenerate public/index.html from ui/page — do this after any change to ui.cljc
-clojure -M build.clj
+clojure -M build.cljk
 
 # browser bundle → public/js/app.js
 npm install && npm run build      # shadow-cljs release app
@@ -81,7 +81,7 @@ WebGPU must be available in the browser. There is no WebGL fallback and `init!` 
 error handler: if `gpu/init-canvas!` rejects, the `#gpu-status` overlay simply keeps
 saying "Initializing WebGPU…".
 
-`test/kami/bim_editor/ui_test.clj` asserts that the generated page still contains the
+`test/kami/bim_editor/ui_test.cljk` asserts that the generated page still contains the
 workspace controls it enumerates (a large fixed subset of what `app.cljs` binds). That test guards `ui.cljc`, **not** the committed
 `public/index.html`, so regenerate the file whenever the page source changes (the
 2026-09-06 README commit did exactly that: the committed page was missing 22 controls
