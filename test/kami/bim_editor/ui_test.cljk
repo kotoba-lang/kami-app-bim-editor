@@ -1,6 +1,6 @@
 (ns kami.bim-editor.ui-test
   (:require [kotoba.lang.text :as string]
-            [clojure.test :refer [deftest is]]
+            [kotoba.test :refer [deftest is]]
             [kami.bim-editor.ui :as ui]))
 
 (deftest generated-ui-retains-complete-authoring-workspace
