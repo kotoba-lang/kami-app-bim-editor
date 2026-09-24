@@ -1,6 +1,6 @@
 (ns kami.bim-editor.integration-test
   (:require [kotoba.test :refer [deftest is]]
-            #?(:clj [clojure.edn :as edn] :cljs [cljs.reader :as edn])
+            #?(:clj [kotoba.lang.edn :as edn] :cljs [cljs.reader :as edn])
             [bim]
             [ifc.core :as ifc]
             [pdf.core :as pdf]
