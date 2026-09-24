@@ -1,6 +1,6 @@
 (ns kami.bim-editor.interaction-test
   (:require [bim :as bim]
-            [clojure.test :refer [deftest is]]
+            [kotoba.test :refer [deftest is]]
             [kami.bim-editor.interaction :as interaction]))
 
 (deftest camera-rays-pick-nearest-elements-and-frame-selection

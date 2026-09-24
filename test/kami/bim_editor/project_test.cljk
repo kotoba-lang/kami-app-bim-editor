@@ -1,4 +1,4 @@
-(ns kami.bim-editor.project-test (:require [clojure.test :refer [deftest is]] [bim] [kami.bim-editor.project :as project]))
+(ns kami.bim-editor.project-test (:require [kotoba.test :refer [deftest is]] [bim] [kami.bim-editor.project :as project]))
 (def model (let [st (bim/storey {:id 3 :name "Ground" :elevation 0 :height 3 :placement :identity :spaces [] :elements []})]
              (update (bim/project "House") :sites conj (bim/site {:id 1 :name "Site" :placement :identity :buildings [(bim/building {:id 2 :name "House" :placement :identity :reference-elevation 0 :storeys [st]})]}))))
 (deftest round-trip
